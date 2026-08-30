@@ -59,7 +59,7 @@
     {
       "path": "Grindr Middle-Click Block.user.js",
       "purpose": "The entire userscript. One IIFE: observation (patched fetch/XHR/WebSocket), actuation (block queue, greet flow, album rotation, DOM sweep), and surface (hotkeys, HUD, diagnostic recorder).",
-      "bytes": 537203,
+      "bytes": 541229,
       "kind": "source"
     },
     {
@@ -185,7 +185,7 @@
     {
       "path": "docs/function-reference.md",
       "purpose": "Every named function, generated from source.",
-      "bytes": 49068,
+      "bytes": 49471,
       "kind": "doc"
     },
     {
@@ -443,7 +443,7 @@
     {
       "path": "test/session-dead-recovery.test.cjs",
       "purpose": "A transient 401 must not freeze the queue forever. WHY THIS FILE IS SEPARATE: it needs a fresh process. The shared end-to-end file forces reconciles, and a reconcile stamps its 30-minute throttle whether or not it succeeds — so by the ti…",
-      "bytes": 3961,
+      "bytes": 5053,
       "kind": "test"
     },
     {

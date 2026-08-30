@@ -83,3 +83,22 @@ test('a transient 401 does not freeze the queue permanently', { timeout: 60_000 
   assert.strictEqual(G.__grindrBlock_state().sessionDead, false,
     'and the latch must not still be set once an authenticated call has succeeded');
 });
+
+// MUST: the HUD can tell a paused queue from an idle one, and the resume button
+// reports what it actually did. Before this, a queue stopped by a 401 and a queue
+// with nothing to do looked identical on screen — which is why the stall went
+// unexplained for hours.
+test('the auth rejection is visible in state, and reset reports what it did', async () => {
+  const s = G.__grindrBlock_state();
+  for (const k of ['sessionDead', 'authRejectCount', 'lastAuthRejectStatus', 'lastAuthRejectAgoMin']) {
+    assert.ok(k in s, `__grindrBlock_state() must expose ${k} for the HUD to render it`);
+  }
+  assert.ok(s.authRejectCount >= 1,
+    'the 401 from the previous test must have been counted, not just logged');
+  assert.strictEqual(s.lastAuthRejectStatus, 401, 'and the status recorded verbatim');
+
+  G.__grindrBlock_arm();                     // reset is a gated console function
+  const r = G.__grindrBlock_reset();
+  assert.ok(r && typeof r.queued === 'number' && typeof r.wasPaused === 'boolean',
+    'reset must report { wasPaused, queued } so the button can say what happened');
+});
