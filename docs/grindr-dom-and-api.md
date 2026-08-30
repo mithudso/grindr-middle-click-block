@@ -265,8 +265,7 @@ and cannot enter the photo-hash index.
 |---|---|
 | tiles with a hosted photo URL | 17 |
 | tiles with a `data:` placeholder only | **13** |
-| of those, identifiable via React fiber | 7 |
-| React-fiber id coverage, all tiles | 24 / 30 |
+| identifiable by `findProfileIdInFiber` | **30 / 30** |
 
 So roughly four in ten tiles could not be reached by the image-driven
 enforcement sweep. A blocked profile with no picture stayed on the grid
@@ -276,6 +275,30 @@ Fixed in v0.57.0 by a second sweep pass that walks `CASCADE_CARD_SELECTOR`
 elements directly and resolves each id from the React fiber. This is safe where
 the v0.38 geometry fallback was not: a cascade cell is a grid tile by
 definition, so the walk cannot wander into the chat sidebar.
+
+### Identity: always ask the fiber, and ask it properly
+
+Every cascade cell is identifiable — 100% of them, measured across two grid
+states, including placeholder-only tiles and tiles rendered ahead of the
+viewport. But the id is not always a scalar prop. An off-screen cell exposes it
+only as **`props.profile.profileId`**, nested one level:
+
+```
+fiber props: { profile: { profileId, onlineUntil, lastOnline, distanceMeters,
+                          primaryImageUrl, favorite, viewed, chatted, ... },
+               height, width }
+```
+
+`findProfileIdInFiber` already checks `props.profile?.profileId` (along with
+`item`, `data` and `user` variants) and so reaches all of them. A shortcut
+resolver that only reads scalar `props.profileId` finds about 80% and makes the
+remainder look like non-profile cells — an earlier pass of this investigation
+reported exactly that and was wrong. If a future measurement claims some cells
+are unidentifiable, check the resolver before believing it.
+
+Cells rendered ahead of the viewport measure 132x176 rather than the on-screen
+559x745, and carry `$hasUnread` / `$isThrob` styled-component props. They are
+ordinary profile cells, not a carousel or promo row.
 
 ### The sidebar avatars, for contrast
 
