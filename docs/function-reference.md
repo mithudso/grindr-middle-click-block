@@ -1,6 +1,6 @@
 # Function reference
 
-Every named function in `Grindr Middle-Click Block.user.js` — **255** of them —
+Every named function in `Grindr Middle-Click Block.user.js` — **256** of them —
 grouped by the section of the file it lives in, with its signature, line number
 and what it does.
 
@@ -10,8 +10,8 @@ sits above it in the file too.
 
 | | |
 |---|---|
-| functions | 255 |
-| documented | 255 / 255 |
+| functions | 256 |
+| documented | 256 / 256 |
 | sections | 40 |
 
 ## Chat greetings / intro messages
@@ -189,282 +189,283 @@ sits above it in the file too.
 | `queueInsertIndex(queue, bulk)` | 2489 | Where a newly enqueued job belongs. Bulk (auto-drain) work appends; interactive work goes to the very front, so the newest press is served next and never waits behind a drain backlog. Pure so the rule can be pinned by… |
 | `nextRunnableIndex(queue, now, manualCapped, bulkCapped)` | 2497 | Index of the first job that can run right now, or -1 when none can. A job is runnable when its own retry backoff has elapsed AND the budget it draws on still has room. Pure, and exported, because this is the exact rul… |
 | `noteApiCalls(n, bulk)` | 2514 | Record N API calls against the rolling-hour cap at once (a block job now makes two writes — hide + block — and the verify makes two read-backs, so callers pass the real count instead of assuming one). `bulk` selects t… |
-| `pruneCallWindows(now)` | 2520 | Drop entries older than the rolling hour from both windows. |
-| `attemptRealBlock(profileId, auth, method)` | 2592 | Apply (POST) or reverse (DELETE) the hide; fall back to the block collection ONLY when the hide didn't take. Never fire both on success — a block after a successful hide silently undoes it (see above). Returns { ok, s… |
-| `attemptHideOrBlock(profileId, auth, method)` | 2608 | Send a hide, falling back to the block collection only if the hide fails. Returns {ok,status,sessionDead,calls}. |
-| `attemptApiBlock(profileId, auth)` | 2639 | Apply: POST the hide (falling back to block only if the hide fails — see above). |
-| `attemptApiUnblock(profileId, auth)` | 2650 | ⚠️ PARTLY UNVERIFIED: the blocks/hides COLLECTIONS are confirmed (the app GETs them), but these DELETE-to-reverse writes are INFERRED from REST convention — confirm against Grindr's own "unblock"/"unhide" request (or … |
-| `verifyBlock(profileId, auth)` | 2677 | Read BOTH lists back to confirm the profile is gone — it counts as applied if it appears in EITHER the blocks list (GET /api/v4/blocks?page=1, paginated) OR the hides list (GET /api/v1/hides), since one middle-click f… |
-| `scheduleBlockRetry(job, reason)` | 2712 | Re-queue a block that didn't stick for another attempt later, backing off exponentially. We never give up: the job keeps its blockQueueSet entry (so the UI still treats it as pending) and gets a `notBefore` timestamp … |
-| `warnEndpointWrong(status)` | 2742 | Warn once that an endpoint answered 404/405/501, and stop retrying that route. |
-| `clearSessionDeadIfSet()` | 2751 | A successful call proves auth is alive again — clear any session-dead pause. Shared by the unblock and block success paths (each acts as a canary). |
-| `warnVerifyUntrusted(reason)` | 2763 | Warn (once) that the block read-back can't be trusted, so we're falling back to trusting the POST. Fires when the verify endpoint is unreachable, OR when the POST keeps succeeding yet the read-back never lists the pro… |
-| `runUnblockJob(job, auth, jobKey)` | 2809 | The single consumer that drains blockQueue. At most one instance runs at a time (the queueProcessing guard); enqueueAction just kicks it and returns. Each iteration: honour any active 429 backoff → enforce the rolling… |
+| `windowResetMinutes(oldestTs, now)` | 2524 | Minutes until a rolling-hour window frees its next slot — i.e. when its OLDEST recorded call ages out. Pure so the arithmetic can be pinned: this is the number shown on the HUD as "frees 1 in Nm", and an off-by-one he… |
+| `pruneCallWindows(now)` | 2529 | Drop entries older than the rolling hour from both windows. |
+| `attemptRealBlock(profileId, auth, method)` | 2601 | Apply (POST) or reverse (DELETE) the hide; fall back to the block collection ONLY when the hide didn't take. Never fire both on success — a block after a successful hide silently undoes it (see above). Returns { ok, s… |
+| `attemptHideOrBlock(profileId, auth, method)` | 2617 | Send a hide, falling back to the block collection only if the hide fails. Returns {ok,status,sessionDead,calls}. |
+| `attemptApiBlock(profileId, auth)` | 2648 | Apply: POST the hide (falling back to block only if the hide fails — see above). |
+| `attemptApiUnblock(profileId, auth)` | 2659 | ⚠️ PARTLY UNVERIFIED: the blocks/hides COLLECTIONS are confirmed (the app GETs them), but these DELETE-to-reverse writes are INFERRED from REST convention — confirm against Grindr's own "unblock"/"unhide" request (or … |
+| `verifyBlock(profileId, auth)` | 2686 | Read BOTH lists back to confirm the profile is gone — it counts as applied if it appears in EITHER the blocks list (GET /api/v4/blocks?page=1, paginated) OR the hides list (GET /api/v1/hides), since one middle-click f… |
+| `scheduleBlockRetry(job, reason)` | 2721 | Re-queue a block that didn't stick for another attempt later, backing off exponentially. We never give up: the job keeps its blockQueueSet entry (so the UI still treats it as pending) and gets a `notBefore` timestamp … |
+| `warnEndpointWrong(status)` | 2751 | Warn once that an endpoint answered 404/405/501, and stop retrying that route. |
+| `clearSessionDeadIfSet()` | 2760 | A successful call proves auth is alive again — clear any session-dead pause. Shared by the unblock and block success paths (each acts as a canary). |
+| `warnVerifyUntrusted(reason)` | 2772 | Warn (once) that the block read-back can't be trusted, so we're falling back to trusting the POST. Fires when the verify endpoint is unreachable, OR when the POST keeps succeeding yet the read-back never lists the pro… |
+| `runUnblockJob(job, auth, jobKey)` | 2818 | The single consumer that drains blockQueue. At most one instance runs at a time (the queueProcessing guard); enqueueAction just kicks it and returns. Each iteration: honour any active 429 backoff → enforce the rolling… |
 
 ## UNBLOCK: fire once, trust a 2xx, no read-back
 
 | Function | Line | Description |
 |---|---|---|
-| `runBlockJob(job, auth, jobKey)` | 2861 | One block job: POST, transport triage, optional read-back, then either confirm-and-collapse or schedule a retry. Same directive protocol as runUnblockJob, and likewise a verbatim extraction. |
+| `runBlockJob(job, auth, jobKey)` | 2870 | One block job: POST, transport triage, optional read-back, then either confirm-and-collapse or schedule a retry. Same directive protocol as runUnblockJob, and likewise a verbatim extraction. |
 
 ## BLOCK: POST, then read it back to confirm it actually applied
 
 | Function | Line | Description |
 |---|---|---|
-| `processQueue()` | 3002 | Drain the rate-limited block/unblock queue. Honours backoff, the hourly cap, the session-dead pause and in-flight aborts. |
-| `enqueueAction(profileId, action, opts)` | 3130 | Add a block/unblock job for a profile and make sure the queue is running. `action` is 'block' or 'unblock'. In LOCAL_ONLY mode no API call is ever made — a block just hides the card and an unblock just acknowledges (t… |
-| `cancelQueuedBlock(profileId)` | 3184 | Reverse a block the user just undid, as cheaply as is safe. Returns true only when it can guarantee no block ever reached Grindr (caller can skip the unblock); returns false when a block may have landed (caller sends … |
+| `processQueue()` | 3011 | Drain the rate-limited block/unblock queue. Honours backoff, the hourly cap, the session-dead pause and in-flight aborts. |
+| `enqueueAction(profileId, action, opts)` | 3139 | Add a block/unblock job for a profile and make sure the queue is running. `action` is 'block' or 'unblock'. In LOCAL_ONLY mode no API call is ever made — a block just hides the card and an unblock just acknowledges (t… |
+| `cancelQueuedBlock(profileId)` | 3193 | Reverse a block the user just undid, as cheaply as is safe. Returns true only when it can guarantee no block ever reached Grindr (caller can skip the unblock); returns false when a block may have landed (caller sends … |
 
 ## Multi-strategy profile-id resolution
 
 | Function | Line | Description |
 |---|---|---|
-| `findProfileIdInFiber(startEl)` | 3221 | Last-resort strategy: read the profileId straight out of React's internals. React attaches a hidden fiber node to each host DOM element under a key like `__reactFiber$<random>` (React 17+) or `__reactInternalInstance$… |
-| `isPlausibleProfileId(id)` | 3271 | True for a 5-10 digit numeric string. The gate every profile id must pass before it reaches the API. |
-| `resolveProfileIdFromClick(e)` | 3291 | Resolve a click into { profileId, profileEl }, where profileEl is the enclosing profile cell/card (used later to dim + remove it). Strategies run in descending order of reliability and stop at the first that yields a … |
+| `findProfileIdInFiber(startEl)` | 3230 | Last-resort strategy: read the profileId straight out of React's internals. React attaches a hidden fiber node to each host DOM element under a key like `__reactFiber$<random>` (React 17+) or `__reactInternalInstance$… |
+| `isPlausibleProfileId(id)` | 3280 | True for a 5-10 digit numeric string. The gate every profile id must pass before it reaches the API. |
+| `resolveProfileIdFromClick(e)` | 3300 | Resolve a click into { profileId, profileEl }, where profileEl is the enclosing profile cell/card (used later to dim + remove it). Strategies run in descending order of reliability and stop at the first that yields a … |
 
 ## Block now, with a 30s un-block window
 
 | Function | Line | Description |
 |---|---|---|
-| `loadLastBlocked()` | 3411 | Restore the most recently blocked id so the HUD can still undo it after a reload. |
-| `noteLastBlocked(id)` | 3416 | Remember and persist the most recently blocked id. |
-| `clearLastBlocked()` | 3422 | Forget the most recently blocked id. |
-| `dimCard(profileEl)` | 3435 | Dim a card to 25% as instant "blocking…" feedback on click — NOT removal. The card only collapses once the hide is confirmed by its 200 (collapseClickedCard, called from the success handler). The pre-click inline styl… |
-| `collapseClickedCard(el)` | 3453 | Collapse the exact element the user clicked once the block/hide is CONFIRMED: fade opacity to 0 (0.2s) then set display:none so the grid closes the gap. Acting on the clicked element (not the photo-hash lookup that ca… |
-| `undimCard(profileEl, prev)` | 3471 | Reverse dim/collapse: cancel any pending collapse, restore display so the card is back in layout, then restore opacity (animating the fade-back). The transition override is cleared only after 220ms — a hair past the 0… |
-| `restoreBlockedCardInDom(profileId)` | 3481 | Reverse of removeBlockedCardFromDom: bring any hidden card(s) back into view. |
-| `ensureUndoStack()` | 3494 | Unblock toasts stack upward from the bottom-left (offset above the generic status toast at bottom:20px) so several recent blocks are each undoable. |
-| `makeUnblockToast(profileId, onUnblock, meta)` | 3518 | Build one interactive "Blocked X · Ns to undo" toast with an Undo button, append it to the stack, and run a 1s countdown ticker. The button's click is stopPropagation'd so it can't bubble into the page. Returns a hand… |
-| `offerUnblock(profileId, profileEl, prevStyle, meta, hiddenN…)` | 3596 | Show the 30-second Undo toast for a block, with the profile's name and photo when known. |
-| `startBlock(profileId, profileEl)` | 3644 | The shared entry point for every block gesture: dim, record locally, index hashes, queue the block, hide the card, offer Undo. |
-| `hideCardsForProfile(profileId, clickedEl)` | 3686 | Collapse every card we can find for a profile — the element that was clicked plus anything the photo-hash index knows about, since the virtualised grid can render the same profile more than once. Always hides the OUTE… |
+| `loadLastBlocked()` | 3420 | Restore the most recently blocked id so the HUD can still undo it after a reload. |
+| `noteLastBlocked(id)` | 3425 | Remember and persist the most recently blocked id. |
+| `clearLastBlocked()` | 3431 | Forget the most recently blocked id. |
+| `dimCard(profileEl)` | 3444 | Dim a card to 25% as instant "blocking…" feedback on click — NOT removal. The card only collapses once the hide is confirmed by its 200 (collapseClickedCard, called from the success handler). The pre-click inline styl… |
+| `collapseClickedCard(el)` | 3462 | Collapse the exact element the user clicked once the block/hide is CONFIRMED: fade opacity to 0 (0.2s) then set display:none so the grid closes the gap. Acting on the clicked element (not the photo-hash lookup that ca… |
+| `undimCard(profileEl, prev)` | 3480 | Reverse dim/collapse: cancel any pending collapse, restore display so the card is back in layout, then restore opacity (animating the fade-back). The transition override is cleared only after 220ms — a hair past the 0… |
+| `restoreBlockedCardInDom(profileId)` | 3490 | Reverse of removeBlockedCardFromDom: bring any hidden card(s) back into view. |
+| `ensureUndoStack()` | 3503 | Unblock toasts stack upward from the bottom-left (offset above the generic status toast at bottom:20px) so several recent blocks are each undoable. |
+| `makeUnblockToast(profileId, onUnblock, meta)` | 3527 | Build one interactive "Blocked X · Ns to undo" toast with an Undo button, append it to the stack, and run a 1s countdown ticker. The button's click is stopPropagation'd so it can't bubble into the page. Returns a hand… |
+| `offerUnblock(profileId, profileEl, prevStyle, meta, hiddenN…)` | 3605 | Show the 30-second Undo toast for a block, with the profile's name and photo when known. |
+| `startBlock(profileId, profileEl)` | 3653 | The shared entry point for every block gesture: dim, record locally, index hashes, queue the block, hide the card, offer Undo. |
+| `hideCardsForProfile(profileId, clickedEl)` | 3695 | Collapse every card we can find for a profile — the element that was clicked plus anything the photo-hash index knows about, since the virtualised grid can render the same profile more than once. Always hides the OUTE… |
 
 ## Persistent block-list enforcement
 
 | Function | Line | Description |
 |---|---|---|
-| `maybeReblock(profileId)` | 3737 | Re-submit a block for a reappearing profile, guarded twice: skip if a block for it is already queued/in-flight, and rate-limit to one re-block per REBLOCK_MIN_INTERVAL_MS per profile so the sweep can't burst the API. |
-| `enforceAllBlocked()` | 3753 | One sweep over rendered tiles, collapsing any that belong to a blocked or hidden profile. O(images), not O(list). |
-| `scheduleEnforce()` | 3853 | Coalesce bursts of mutations/payloads into a single sweep per quiet window. |
-| `installBlockListEnforcement()` | 3860 | Wire the enforcement up at boot: a debounced MutationObserver (the cascade re-inserts tiles on scroll), a periodic backstop, and one initial sweep. |
-| `unblockAllRecent()` | 3873 | Panic button from DevTools: unblock every profile still inside its undo window. |
-| `attemptBlock(e)` | 3903 | The bridge from a raw click event to a block. Resolves the profileId; if nothing matched, logs a diagnostic (target tag/class + URL, handy for adding selectors later) and bails WITHOUT preventDefault so the click beha… |
+| `maybeReblock(profileId)` | 3746 | Re-submit a block for a reappearing profile, guarded twice: skip if a block for it is already queued/in-flight, and rate-limit to one re-block per REBLOCK_MIN_INTERVAL_MS per profile so the sweep can't burst the API. |
+| `enforceAllBlocked()` | 3762 | One sweep over rendered tiles, collapsing any that belong to a blocked or hidden profile. O(images), not O(list). |
+| `scheduleEnforce()` | 3862 | Coalesce bursts of mutations/payloads into a single sweep per quiet window. |
+| `installBlockListEnforcement()` | 3869 | Wire the enforcement up at boot: a debounced MutationObserver (the cascade re-inserts tiles on scroll), a periodic backstop, and one initial sweep. |
+| `unblockAllRecent()` | 3882 | Panic button from DevTools: unblock every profile still inside its undo window. |
+| `attemptBlock(e)` | 3912 | The bridge from a raw click event to a block. Resolves the profileId; if nothing matched, logs a diagnostic (target tag/class + URL, handy for adding selectors later) and bails WITHOUT preventDefault so the click beha… |
 
 ## Chat greeting send (ported from the Sniffies soft-filter userscript)
 
 | Function | Line | Description |
 |---|---|---|
-| `isOwnGreetUi(el)` | 3941 | The script's own toasts both use the `grindr-block-` id prefix; skip them so composer/button scans never pick our own UI. |
-| `isVisibleEl(el)` | 3946 | In-DOM, not disabled, not display:none/hidden/~transparent, larger than 1x1. |
-| `isInsideChatDrawer(el)` | 3964 | True when an element sits inside the floating chat drawer, identified by controls only it has. |
-| `findChatComposer()` | 3976 | Pick the message box. Scores candidates, refuses search fields, and skips the chat drawer when it holds someone else. |
-| `isInChatComposerArea(target, composer)` | 4040 | True when a composer exists AND the click target shares a chat-scope ancestor with it (or is the composer). This is the gate that preserves the cascade grid's block behaviour: no composer on the grid → false → attempt… |
-| `loadGreetings()` | 4061 | Restore a user-edited greeting list, if any. |
-| `activeGreetings()` | 4066 | The greeting list in force: the user's if set, otherwise the built-in one. |
-| `setGreetings(list)` | 4068 | Replace the greeting list. An empty list restores the built-in one. |
-| `pickGreeting()` | 4081 | Choose a greeting at random, avoiding an immediate repeat, with time tokens resolved. |
-| `fillComposer(el, text)` | 4100 | Type text into the composer (contenteditable or value-based) and fire the input/change events frameworks listen for. For value-based inputs it goes through the NATIVE value setter, because Grindr is React and React tr… |
-| `composerText(el)` | 4130 | Click a visible Send button scoped near the composer (text/aria/title 'send'). What the composer currently holds, for both input and contenteditable forms. The single most useful signal in this whole flow: Grindr clea… |
-| `findSendButton(inputEl)` | 4159 | Find and click the composer's send button. Three rules, in order of how much each one saved us: reject anything whose name names an attachment type, require an exact send-ish name rather than a substring, and prefer t… |
-| `clickSendButton(inputEl)` | 4210 | Click the composer's send button. Returns whether one was found and clicked, NOT whether anything sent. |
-| `pressEnter(inputEl)` | 4218 | Fallback: simulate Enter to submit, when no Send button is found. |
-| `sendGreetingInChat(composer)` | 4232 | Orchestrator: pick a greeting, fill the composer, send it (Send button → Enter fallback), and toast the result. Cooldown-guarded so the dual mousedown+auxclick firing of one physical middle-click sends only once. |
+| `isOwnGreetUi(el)` | 3950 | The script's own toasts both use the `grindr-block-` id prefix; skip them so composer/button scans never pick our own UI. |
+| `isVisibleEl(el)` | 3955 | In-DOM, not disabled, not display:none/hidden/~transparent, larger than 1x1. |
+| `isInsideChatDrawer(el)` | 3973 | True when an element sits inside the floating chat drawer, identified by controls only it has. |
+| `findChatComposer()` | 3985 | Pick the message box. Scores candidates, refuses search fields, and skips the chat drawer when it holds someone else. |
+| `isInChatComposerArea(target, composer)` | 4049 | True when a composer exists AND the click target shares a chat-scope ancestor with it (or is the composer). This is the gate that preserves the cascade grid's block behaviour: no composer on the grid → false → attempt… |
+| `loadGreetings()` | 4070 | Restore a user-edited greeting list, if any. |
+| `activeGreetings()` | 4075 | The greeting list in force: the user's if set, otherwise the built-in one. |
+| `setGreetings(list)` | 4077 | Replace the greeting list. An empty list restores the built-in one. |
+| `pickGreeting()` | 4090 | Choose a greeting at random, avoiding an immediate repeat, with time tokens resolved. |
+| `fillComposer(el, text)` | 4109 | Type text into the composer (contenteditable or value-based) and fire the input/change events frameworks listen for. For value-based inputs it goes through the NATIVE value setter, because Grindr is React and React tr… |
+| `composerText(el)` | 4139 | Click a visible Send button scoped near the composer (text/aria/title 'send'). What the composer currently holds, for both input and contenteditable forms. The single most useful signal in this whole flow: Grindr clea… |
+| `findSendButton(inputEl)` | 4168 | Find and click the composer's send button. Three rules, in order of how much each one saved us: reject anything whose name names an attachment type, require an exact send-ish name rather than a substring, and prefer t… |
+| `clickSendButton(inputEl)` | 4219 | Click the composer's send button. Returns whether one was found and clicked, NOT whether anything sent. |
+| `pressEnter(inputEl)` | 4227 | Fallback: simulate Enter to submit, when no Send button is found. |
+| `sendGreetingInChat(composer)` | 4241 | Orchestrator: pick a greeting, fill the composer, send it (Send button → Enter fallback), and toast the result. Cooldown-guarded so the dual mousedown+auxclick firing of one physical middle-click sends only once. |
 
 ## Shift+right-click → greet a profile (ported from the Sniffies model)
 
 | Function | Line | Description |
 |---|---|---|
-| `loadPendingGreets()` | 4259 | Restore queued greetings, discarding any older than GREET_PENDING_MAX_AGE_MS. |
-| `savePendingGreets()` | 4276 | Persist the queued-greeting map. |
-| `queuePendingGreet(profileId, phrase)` | 4281 | Queue a greeting for a profile whose chat is about to open. |
-| `readPendingGreet(profileId)` | 4291 | Read a queued greeting without consuming it. |
-| `consumePendingGreet(profileId)` | 4296 | Read and remove a queued greeting. |
-| `makeGreetToken(id, ts)` | 4308 | A stray /chat/<id>?grindrGreet=1 link (bookmarked or shared) must not auto-send a greeting queued for a DIFFERENT visit. This lightweight, non-crypto token binds the request to the exact queued entry (id + queue times… |
-| `maybeCloseGreetTab()` | 4314 | Self-close a tab we opened for an auto-greet, mirroring the Sniffies tab-closer: window.close() only works on script-opened windows, so the about:blank + close retry covers browsers that ignore the first call. |
-| `openGreetChat(profileId)` | 4331 | GREET_MODE='newtab' only: open the chat in a new tab. Documented logout risk; boots a second app instance. |
+| `loadPendingGreets()` | 4268 | Restore queued greetings, discarding any older than GREET_PENDING_MAX_AGE_MS. |
+| `savePendingGreets()` | 4285 | Persist the queued-greeting map. |
+| `queuePendingGreet(profileId, phrase)` | 4290 | Queue a greeting for a profile whose chat is about to open. |
+| `readPendingGreet(profileId)` | 4300 | Read a queued greeting without consuming it. |
+| `consumePendingGreet(profileId)` | 4305 | Read and remove a queued greeting. |
+| `makeGreetToken(id, ts)` | 4317 | A stray /chat/<id>?grindrGreet=1 link (bookmarked or shared) must not auto-send a greeting queued for a DIFFERENT visit. This lightweight, non-crypto token binds the request to the exact queued entry (id + queue times… |
+| `maybeCloseGreetTab()` | 4323 | Self-close a tab we opened for an auto-greet, mirroring the Sniffies tab-closer: window.close() only works on script-opened windows, so the about:blank + close retry covers browsers that ignore the first call. |
+| `openGreetChat(profileId)` | 4340 | GREET_MODE='newtab' only: open the chat in a new tab. Documented logout risk; boots a second app instance. |
 
 ## Conversation ids, the open conversation, and Grindr's real URL shapes
 
 | Function | Line | Description |
 |---|---|---|
-| `conversationIdFor(a, b)` | 4385 | ── Conversation ids, the open conversation, and Grindr's real URL shapes ── Corrected in v0.23.0 from a HAR of a greet that actually SENT. Three of this script's load-bearing assumptions about Grindr's URLs were wrong… |
-| `noteOpenConversation(a, b)` | 4405 | Record which conversation Grindr currently has open, learned from its own traffic. |
-| `noteOpenConversationFromBody(body)` | 4415 | Extract a conversationId from a request body (the typing indicator carries one). |
-| `openConversationInvolves(profileId)` | 4424 | Is `profileId` one of the two people in the conversation currently on screen? A stale observation is treated as "don't know" (false) rather than as proof. |
-| `isProfileOverlayOpenFromUrl()` | 4433 | Grindr renders an open profile and its photo lightbox as query flags on the grid route rather than as routes of their own. |
-| `isLightboxOpenFromUrl()` | 4438 | True when the photo lightbox is open (?lightbox=true). |
-| `chatRouteFor(profileId)` | 4447 | Kept for GREET_MODE='spa' only, and now built with the sorted id. The default 'ui' mode never calls this: deep-linking a conversation that does not exist yet is what produced the 500s, and driving the app's own Chat b… |
-| `chatPeerIdFromPath()` | 4460 | Who you're talking to. The URL is checked first for the older /chat/<a>:<b> and /chat/<them> forms, then the observed open conversation — which is the only source that works on the current build, where the route is ba… |
+| `conversationIdFor(a, b)` | 4394 | ── Conversation ids, the open conversation, and Grindr's real URL shapes ── Corrected in v0.23.0 from a HAR of a greet that actually SENT. Three of this script's load-bearing assumptions about Grindr's URLs were wrong… |
+| `noteOpenConversation(a, b)` | 4414 | Record which conversation Grindr currently has open, learned from its own traffic. |
+| `noteOpenConversationFromBody(body)` | 4424 | Extract a conversationId from a request body (the typing indicator carries one). |
+| `openConversationInvolves(profileId)` | 4433 | Is `profileId` one of the two people in the conversation currently on screen? A stale observation is treated as "don't know" (false) rather than as proof. |
+| `isProfileOverlayOpenFromUrl()` | 4442 | Grindr renders an open profile and its photo lightbox as query flags on the grid route rather than as routes of their own. |
+| `isLightboxOpenFromUrl()` | 4447 | True when the photo lightbox is open (?lightbox=true). |
+| `chatRouteFor(profileId)` | 4456 | Kept for GREET_MODE='spa' only, and now built with the sorted id. The default 'ui' mode never calls this: deep-linking a conversation that does not exist yet is what produced the 500s, and driving the app's own Chat b… |
+| `chatPeerIdFromPath()` | 4469 | Who you're talking to. The URL is checked first for the older /chat/<a>:<b> and /chat/<them> forms, then the observed open conversation — which is the only source that works on the current build, where the route is ba… |
 
 ## Greeting navigation: same-tab SPA route change, never a page load
 
 | Function | Line | Description |
 |---|---|---|
-| `spaNavigate(path)` | 4498 | ── Greeting navigation: same-tab SPA route change, never a page load ────── WHY THIS EXISTS: v0.16–0.19 opened the target chat in a NEW TAB (falling back to location.href when the popup was blocked). Both boot a SECON… |
-| `greetViaSpaRoute(profileId)` | 4514 | Greet by routing to the chat in THIS tab, sending, and (optionally) routing back to where you were. Everything is best-effort and always returns you to the previous route on failure — a half-navigated app is worse tha… |
+| `spaNavigate(path)` | 4507 | ── Greeting navigation: same-tab SPA route change, never a page load ────── WHY THIS EXISTS: v0.16–0.19 opened the target chat in a NEW TAB (falling back to location.href when the popup was blocked). Both boot a SECON… |
+| `greetViaSpaRoute(profileId)` | 4523 | Greet by routing to the chat in THIS tab, sending, and (optionally) routing back to where you were. Everything is best-effort and always returns you to the previous route on failure — a half-navigated app is worse tha… |
 
 ## Greeting by driving the app's own UI
 
 | Function | Line | Description |
 |---|---|---|
-| `isAppChrome(el)` | 4602 | True when an element is nav/header/sidebar/lightbox chrome, which must never be mistaken for content. |
-| `findProfileChatButton(root)` | 4615 | The button that starts a conversation from an open profile. Accessible name first, visible label second — both, because Grindr's markup uses either depending on the build, and neither alone has been stable across vers… |
-| `elementNames(el)` | 4644 | Every string that could carry an element's accessible name. |
-| `chatButtonRank(el)` | 4656 | 2 = a name that IS a chat verb, 1 = a name that merely contains one. Exact beats loose regardless of DOM order. |
-| `pollFor(check, then, onGiveUp, attempts = GREET_AUTOSE…)` | 4665 | Poll for `check()` to return something truthy, then run `then` with it. Bounded by the same attempt budget the composer poll uses, and every caller supplies an onGiveUp so a half-finished flow always unwinds. |
-| `greetTargetMismatch(profileId)` | 4689 | Refuse to type into a chat that demonstrably belongs to someone else. The rule is deliberately asymmetric. If we have recently observed an open conversation and the target is NOT in it, that is positive evidence we ar… |
+| `isAppChrome(el)` | 4611 | True when an element is nav/header/sidebar/lightbox chrome, which must never be mistaken for content. |
+| `findProfileChatButton(root)` | 4624 | The button that starts a conversation from an open profile. Accessible name first, visible label second — both, because Grindr's markup uses either depending on the build, and neither alone has been stable across vers… |
+| `elementNames(el)` | 4653 | Every string that could carry an element's accessible name. |
+| `chatButtonRank(el)` | 4665 | 2 = a name that IS a chat verb, 1 = a name that merely contains one. Exact beats loose regardless of DOM order. |
+| `pollFor(check, then, onGiveUp, attempts = GREET_AUTOSE…)` | 4674 | Poll for `check()` to return something truthy, then run `then` with it. Bounded by the same attempt budget the composer poll uses, and every caller supplies an onGiveUp so a half-finished flow always unwinds. |
+| `greetTargetMismatch(profileId)` | 4698 | Refuse to type into a chat that demonstrably belongs to someone else. The rule is deliberately asymmetric. If we have recently observed an open conversation and the target is NOT in it, that is positive evidence we ar… |
 
 ## Did it actually send?
 
 | Function | Line | Description |
 |---|---|---|
-| `confirmComposerCleared(composer, phrase, then)` | 4713 | Poll until the composer is genuinely empty. An empty box is the only trustworthy proof a message sent. |
-| `dismissAccidentalPanel()` | 4734 | Close a panel our own click may have opened over the chat (the location picker being the one we've actually hit). Escape is what the app's own close button maps to, and it is harmless when nothing is open. |
-| `pressEscape()` | 4736 | One definition of "close whatever overlay is up". Was inlined at three sites. |
-| `submitComposer(composer, phrase, then)` | 4744 | Submit the composer and report only what we can show. Tries the send button, waits for the box to clear, and falls back to Enter if it didn't — closing whatever the button click may have opened first, so the retry isn… |
-| `typeAndSendGreeting(phrase, profileId)` | 4759 | Type the phrase into the open composer and submit it. |
+| `confirmComposerCleared(composer, phrase, then)` | 4722 | Poll until the composer is genuinely empty. An empty box is the only trustworthy proof a message sent. |
+| `dismissAccidentalPanel()` | 4743 | Close a panel our own click may have opened over the chat (the location picker being the one we've actually hit). Escape is what the app's own close button maps to, and it is harmless when nothing is open. |
+| `pressEscape()` | 4745 | One definition of "close whatever overlay is up". Was inlined at three sites. |
+| `submitComposer(composer, phrase, then)` | 4753 | Submit the composer and report only what we can show. Tries the send button, waits for the box to clear, and falls back to Enter if it didn't — closing whatever the button click may have opened first, so the retry isn… |
+| `typeAndSendGreeting(phrase, profileId)` | 4768 | Type the phrase into the open composer and submit it. |
 
 ## Greet flow token
 
 | Function | Line | Description |
 |---|---|---|
-| `greetFlowActive()` | 4809 | True while a greet flow is in progress. |
-| `beginGreetFlow(id)` | 4815 | Claim the single greet slot, cancelling any predecessor, and arm a watchdog so a throwing path cannot wedge it. |
-| `trackGreetTimer(timer)` | 4833 | Register a timer against the active flow so cancelling the flow stops it. |
-| `endGreetFlow(flow)` | 4838 | Release the greet slot and clear its timers. |
-| `cancelGreetFlow(why)` | 4847 | Abandon the in-flight greet, e.g. on a route change. |
-| `openProfilePeerId()` | 4857 | Full UI-driven greet: (profile open? → chat button → composer → send → home). `openIfNeeded` clicks the grid tile first when the profile isn't open yet. Who does the app itself say is on screen? '' when it has not tol… |
-| `contradictedByOpenProfile(id)` | 4868 | Refuse any action whose target the open overlay contradicts. This is the guard that would have stopped the greet delivered to 600000003 while 600000002 was open: a mismatch means our target came from somewhere stale, … |
-| `greetViaUi(profileId)` | 4877 | Greet by driving the app's own UI: refuse a contradicted target, use the profile's composer, submit, then the chosen after-action. |
-| `triggerShiftRightGreetForProfile(profileId)` | 5041 | Shift+right-click entry point. If you're already on this profile's chat, send into the open composer inline (the pre-0.16 behaviour); otherwise queue the greeting and open the chat so the arriving page sends it. |
-| `maybeAutoSendPendingGreetFromUrl()` | 5058 | Runs on every fresh load: if the URL carries grindrGreet=1 for /chat/<id> and a matching, fresh greeting is still queued, poll for the chat composer, fill + send the queued phrase, drop it from the pending map, strip … |
+| `greetFlowActive()` | 4818 | True while a greet flow is in progress. |
+| `beginGreetFlow(id)` | 4824 | Claim the single greet slot, cancelling any predecessor, and arm a watchdog so a throwing path cannot wedge it. |
+| `trackGreetTimer(timer)` | 4842 | Register a timer against the active flow so cancelling the flow stops it. |
+| `endGreetFlow(flow)` | 4847 | Release the greet slot and clear its timers. |
+| `cancelGreetFlow(why)` | 4856 | Abandon the in-flight greet, e.g. on a route change. |
+| `openProfilePeerId()` | 4866 | Full UI-driven greet: (profile open? → chat button → composer → send → home). `openIfNeeded` clicks the grid tile first when the profile isn't open yet. Who does the app itself say is on screen? '' when it has not tol… |
+| `contradictedByOpenProfile(id)` | 4877 | Refuse any action whose target the open overlay contradicts. This is the guard that would have stopped the greet delivered to 600000003 while 600000002 was open: a mismatch means our target came from somewhere stale, … |
+| `greetViaUi(profileId)` | 4886 | Greet by driving the app's own UI: refuse a contradicted target, use the profile's composer, submit, then the chosen after-action. |
+| `triggerShiftRightGreetForProfile(profileId)` | 5050 | Shift+right-click entry point. If you're already on this profile's chat, send into the open composer inline (the pre-0.16 behaviour); otherwise queue the greeting and open the chat so the arriving page sends it. |
+| `maybeAutoSendPendingGreetFromUrl()` | 5067 | Runs on every fresh load: if the URL carries grindrGreet=1 for /chat/<id> and a matching, fresh greeting is still queued, poll for the chat composer, fill + send the queued phrase, drop it from the pending map, strip … |
 
 ## Cascade keyboard cursor (ArrowLeft / ArrowRight / f)
 
 | Function | Line | Description |
 |---|---|---|
-| `isSixKey(k)` | 5129 | True while focus is in something that eats keystrokes, so Home/End still move the caret and PageUp/PageDown still scroll the field instead of firing a greeting. Is this one of the six hotkeys? Used only to decide whet… |
-| `describeEl(el)` | 5134 | Compact description of an element, for diagnostics. |
-| `isTypingTarget(el)` | 5145 | True when focus is in something that eats keystrokes, so hotkeys stand down. |
-| `listCascadeCards()` | 5165 | Every profile tile currently rendered, in visual (DOM) order. Two passes, because Grindr's markup for a cell is not stable across builds: 1. The known cell selector (CASCADE_CARD_SELECTOR, shared with the block path) … |
-| `clearHotkeyCursor()` | 5194 | Paint / unpaint the cursor. The tile's pre-cursor inline outline styles are snapshotted so moving away restores it exactly (the same contract dimCard keeps for the block path). |
-| `setHotkeyCursor(el, { scroll = true } = {})` | 5209 | Move the visual tile cursor to an element, optionally scrolling it into view. |
-| `scrollCursorIntoView(el)` | 5232 | Centre the cursor's tile in the viewport. |
-| `currentCursorCard()` | 5241 | The live tile for the cursor, healing the two ways a virtualised grid breaks the remembered reference: the element was unmounted (re-derive it from the remembered profileId through the photo-hash index), or it was nev… |
-| `firstOnscreenCard(cards)` | 5260 | With no cursor yet, start at the first tile that's actually on screen (not tile #0 far above the current scroll position) so the first ArrowRight lands where you're already looking. |
-| `moveHotkeyCursor(delta)` | 5273 | Move the cursor by `delta` tiles (+1 next, -1 previous). At either end of the rendered grid we scroll the page that way once and retry after HOTKEY_EDGE_SCROLL_WAIT_MS, giving the virtualised list time to mount more t… |
-| `hotkeyGreetTarget()` | 5306 | The action-key greeting. Target is resolveTargetProfileId() — on the grid the profile under the MOUSE POINTER (pointing beats arrowing), on an open profile or chat the one you're looking at. The send itself is trigger… |
-| `resolveHotkeyTargetAndCard()` | 5336 | Resolve the target for an action key and, on the grid, the card element that represents it — startBlock needs the element to dim it and to snapshot the style its Undo restores. Mirrors hotkeyGreetTarget's resolution s… |
-| `cardBelongsToProfile(card, profileId)` | 5354 | Does this card actually represent `profileId`? Resolved the same way a real click resolves it, so the answer agrees with what clicking would do. |
-| `hotkeyBlockTarget()` | 5367 | Home — block the target through the full middle-click path: local block list, rate-limited hide/block queue, 30-second Undo. Identical to the mouse gesture, so everything that already guards a click (dedupe, verify, r… |
-| `hotkeyHideTarget()` | 5403 | End — hide the target LOCAL-ONLY. No API call and nothing sent to Grindr, but the id IS persisted (addToHiddenList → HIDELIST_STORAGE_KEY), so the hide survives reloads; the enforcement sweep collapses the card on eve… |
+| `isSixKey(k)` | 5138 | True while focus is in something that eats keystrokes, so Home/End still move the caret and PageUp/PageDown still scroll the field instead of firing a greeting. Is this one of the six hotkeys? Used only to decide whet… |
+| `describeEl(el)` | 5143 | Compact description of an element, for diagnostics. |
+| `isTypingTarget(el)` | 5154 | True when focus is in something that eats keystrokes, so hotkeys stand down. |
+| `listCascadeCards()` | 5174 | Every profile tile currently rendered, in visual (DOM) order. Two passes, because Grindr's markup for a cell is not stable across builds: 1. The known cell selector (CASCADE_CARD_SELECTOR, shared with the block path) … |
+| `clearHotkeyCursor()` | 5203 | Paint / unpaint the cursor. The tile's pre-cursor inline outline styles are snapshotted so moving away restores it exactly (the same contract dimCard keeps for the block path). |
+| `setHotkeyCursor(el, { scroll = true } = {})` | 5218 | Move the visual tile cursor to an element, optionally scrolling it into view. |
+| `scrollCursorIntoView(el)` | 5241 | Centre the cursor's tile in the viewport. |
+| `currentCursorCard()` | 5250 | The live tile for the cursor, healing the two ways a virtualised grid breaks the remembered reference: the element was unmounted (re-derive it from the remembered profileId through the photo-hash index), or it was nev… |
+| `firstOnscreenCard(cards)` | 5269 | With no cursor yet, start at the first tile that's actually on screen (not tile #0 far above the current scroll position) so the first ArrowRight lands where you're already looking. |
+| `moveHotkeyCursor(delta)` | 5282 | Move the cursor by `delta` tiles (+1 next, -1 previous). At either end of the rendered grid we scroll the page that way once and retry after HOTKEY_EDGE_SCROLL_WAIT_MS, giving the virtualised list time to mount more t… |
+| `hotkeyGreetTarget()` | 5315 | The action-key greeting. Target is resolveTargetProfileId() — on the grid the profile under the MOUSE POINTER (pointing beats arrowing), on an open profile or chat the one you're looking at. The send itself is trigger… |
+| `resolveHotkeyTargetAndCard()` | 5345 | Resolve the target for an action key and, on the grid, the card element that represents it — startBlock needs the element to dim it and to snapshot the style its Undo restores. Mirrors hotkeyGreetTarget's resolution s… |
+| `cardBelongsToProfile(card, profileId)` | 5363 | Does this card actually represent `profileId`? Resolved the same way a real click resolves it, so the answer agrees with what clicking would do. |
+| `hotkeyBlockTarget()` | 5376 | Home — block the target through the full middle-click path: local block list, rate-limited hide/block queue, 30-second Undo. Identical to the mouse gesture, so everything that already guards a click (dedupe, verify, r… |
+| `hotkeyHideTarget()` | 5412 | End — hide the target LOCAL-ONLY. No API call and nothing sent to Grindr, but the id IS persisted (addToHiddenList → HIDELIST_STORAGE_KEY), so the hide survives reloads; the enforcement sweep collapses the card on eve… |
 
 ## Where am I? (profile view vs grid)
 
 | Function | Line | Description |
 |---|---|---|
-| `openProfileIdFromUrl()` | 5456 | A route that names the profile: /profile/<id>, /profiles/<id>, /p/<id>, or ?profileId=<id>. NOT /chat/<id> — that's the chat page, handled separately. |
-| `findOpenProfileView()` | 5470 | The element hosting an open full-screen profile, or null. The geometry fallback requires ≥35% of the viewport AND at most 6 profile photos inside (a profile's photo carousel), which is what separates it from the casca… |
-| `isProfileViewOpen()` | 5529 | v0.23.0: "?profile=true" is how the current build says a profile overlay is open (no id in it — see the URL-shapes note above), so it is now the first and cheapest answer here instead of the geometry guess in findOpen… |
-| `openProfileSignature()` | 5536 | A cheap fingerprint of "which profile is on screen", used to tell whether a navigation attempt actually moved. Prefers the id in the URL; falls back to the src of the first profile photo, which changes when the pager … |
+| `openProfileIdFromUrl()` | 5480 | A route that names the profile: /profile/<id>, /profiles/<id>, /p/<id>, or ?profileId=<id>. NOT /chat/<id> — that's the chat page, handled separately. |
+| `findOpenProfileView()` | 5494 | The element hosting an open full-screen profile, or null. The geometry fallback requires ≥35% of the viewport AND at most 6 profile photos inside (a profile's photo carousel), which is what separates it from the casca… |
+| `isProfileViewOpen()` | 5553 | v0.23.0: "?profile=true" is how the current build says a profile overlay is open (no id in it — see the URL-shapes note above), so it is now the first and cheapest answer here instead of the geometry guess in findOpen… |
+| `openProfileSignature()` | 5560 | A cheap fingerprint of "which profile is on screen", used to tell whether a navigation attempt actually moved. Prefers the id in the URL; falls back to the src of the first profile photo, which changes when the pager … |
 
 ## Profile-pager navigation (Insert / Delete on an open profile)
 
 | Function | Line | Description |
 |---|---|---|
-| `dispatchArrowKey(delta, host)` | 5558 | Synthesise the arrow key Grindr's own profile pager listens for. |
-| `clickProfilePagerButton(delta)` | 5612 | Fallback when the synthetic arrow does not move the view: click the pager control, matched on whole words only. |
-| `navigateOpenProfile(delta)` | 5649 | Advance the open profile view by one. Blur → synthetic arrow → (if the view didn't change within PROFILE_NAV_VERIFY_MS) click the pager button. Returns true if we handled the key at all, so the caller knows to prevent… |
-| `navigateProfiles(delta)` | 5670 | The single entry point for PageUp/PageDown: profile view → app pager; grid → our tile cursor; neither → false, and the keypress is left alone (so Delete still forward-deletes text on a page we have no business touching). |
+| `dispatchArrowKey(delta, host)` | 5582 | Synthesise the arrow key Grindr's own profile pager listens for. |
+| `clickProfilePagerButton(delta)` | 5636 | Fallback when the synthetic arrow does not move the view: click the pager control, matched on whole words only. |
+| `navigateOpenProfile(delta)` | 5673 | Advance the open profile view by one. Blur → synthetic arrow → (if the view didn't change within PROFILE_NAV_VERIFY_MS) click the pager button. Returns true if we handled the key at all, so the caller knows to prevent… |
+| `navigateProfiles(delta)` | 5694 | The single entry point for PageUp/PageDown: profile view → app pager; grid → our tile cursor; neither → false, and the keypress is left alone (so Delete still forward-deletes text on a page we have no business touching). |
 
 ## Target resolution for the action keys
 
 | Function | Line | Description |
 |---|---|---|
-| `resolveTargetProfileId()` | 5708 | Decide which profile the action keys act on. An open overlay resolves from Grindr's own conversation fetch first. |
-| `noteViewedProfileFromUrl(url)` | 5764 | Remember the last single profile the app fetched, as a last-resort target. |
+| `resolveTargetProfileId()` | 5732 | Decide which profile the action keys act on. An open overlay resolves from Grindr's own conversation fetch first. |
+| `noteViewedProfileFromUrl(url)` | 5788 | Remember the last single profile the app fetched, as a last-resort target. |
 
 ## Albums: progressive unlock
 
 | Function | Line | Description |
 |---|---|---|
-| `retireAlbum(id, status)` | 5864 | Albums Grindr refuses (403/404). Persisted with the rest of the album state so a dead id is skipped for good rather than re-probed on every unlock. |
-| `loadAlbumState()` | 5889 | Restore album state, migrating and discarding anything a removed heuristic wrote. |
-| `saveAlbumState()` | 5931 | Persist album state. |
-| `albumUuid()` | 5951 | A fresh uuid4 per share (see the shareId note above). crypto.randomUUID is present in every browser that runs current Grindr web; the manual fallback keeps the feature alive on an older engine or a non-secure context. |
-| `noteAlbumIdFromUrl(url)` | 5962 | Discovery + ownership, from any /albums/{id}/shares URL the app touches. |
-| `noteMyProfileIdFromConversationId(a, b)` | 5992 | Learn your own profile id by intersection: you are the id common to two different conversations. |
-| `noteMyProfileIdFromUrl(url)` | 6017 | Learn your own profile id and the open conversation from a URL. |
-| `findAlbumIdInFiber(startEl)` | 6076 | Fiber walk for an album id, same technique (and same fragility caveat) as findProfileIdInFiber: start at the clicked/rendered node and walk UP, because the leaf <img> rarely holds the data but the tile component does. |
-| `scanAlbumsFromDom()` | 6105 | Read album ids and names off the My Albums panel. |
-| `harvestAlbums(node, out, depth)` | 6150 | Pull {id, name} pairs out of whatever shape the list endpoint returns — Grindr's payloads nest inconsistently, so this walks rather than assumes. |
-| `loadAlbumNames()` | 6163 | Probe the album list endpoints once and adopt the first that returns album objects. |
-| `applyNameOrder(list)` | 6217 | The rotation: explicit order first, then discovery order (unless pinned). Order the rotation by NAME when the names are known — ALBUM_ORDER_BY_NAME lists the albums you want handed out first, by their label, so the or… |
-| `albumRotation()` | 6232 | The ordered album list the unlock hotkey walks, with retired albums removed. |
-| `fetchAlbumShares(albumId, force)` | 6253 | Authoritative share list for one album, cached for ALBUM_SHARES_CACHE_MS. A failed read returns null (NOT an empty set) so a network blip can never be mistaken for "nobody has this album" and cause a duplicate share. |
-| `ledgerHas(pid, albumId)` | 6285 | True when this album has already been shared with this profile. |
-| `ledgerAdd(pid, albumId)` | 6290 | Record that an album was shared with a profile. |
-| `ledgerDrop(pid, albumId)` | 6296 | Forget that an album was shared with a profile. |
-| `shareAlbumWith(albumId, pid)` | 6305 | POST one share. Returns true only on a 2xx. |
-| `unshareAlbumFrom(albumId, pid)` | 6336 | Un-share — CONFIRMED from a HAR of the app's own "Stop Sharing" button (web.grindr.com6.har): a PUT (not DELETE) to /unshares, with the same body shape as a share and a FRESH uuid shareId. The v0.19 three-shape DELETE… |
-| `reshareAlbum(pid, albumId)` | 6365 | Unshare then re-share, which is what the app makes you do by hand to re-notify someone who already has the album (the "Stop Sharing" button in the Media picker). Deliberate, never automatic. |
-| `shareNextAlbumWith(profileId)` | 6378 | The 'u' action: give this profile the next album in the rotation they do not already have. "Already have" is answered by the server's own share list, with the local ledger as a fallback when that read fails. |
-| `hotkeyUnlockAlbum()` | 6421 | The 'u' hotkey. Target resolution is the shared resolveTargetProfileId chain (hover / URL / open view / cursor / last-fetched profile). Never advances the cursor — unlocking is something you do to the profile you're a… |
+| `retireAlbum(id, status)` | 5888 | Albums Grindr refuses (403/404). Persisted with the rest of the album state so a dead id is skipped for good rather than re-probed on every unlock. |
+| `loadAlbumState()` | 5913 | Restore album state, migrating and discarding anything a removed heuristic wrote. |
+| `saveAlbumState()` | 5955 | Persist album state. |
+| `albumUuid()` | 5975 | A fresh uuid4 per share (see the shareId note above). crypto.randomUUID is present in every browser that runs current Grindr web; the manual fallback keeps the feature alive on an older engine or a non-secure context. |
+| `noteAlbumIdFromUrl(url)` | 5986 | Discovery + ownership, from any /albums/{id}/shares URL the app touches. |
+| `noteMyProfileIdFromConversationId(a, b)` | 6016 | Learn your own profile id by intersection: you are the id common to two different conversations. |
+| `noteMyProfileIdFromUrl(url)` | 6041 | Learn your own profile id and the open conversation from a URL. |
+| `findAlbumIdInFiber(startEl)` | 6100 | Fiber walk for an album id, same technique (and same fragility caveat) as findProfileIdInFiber: start at the clicked/rendered node and walk UP, because the leaf <img> rarely holds the data but the tile component does. |
+| `scanAlbumsFromDom()` | 6129 | Read album ids and names off the My Albums panel. |
+| `harvestAlbums(node, out, depth)` | 6174 | Pull {id, name} pairs out of whatever shape the list endpoint returns — Grindr's payloads nest inconsistently, so this walks rather than assumes. |
+| `loadAlbumNames()` | 6187 | Probe the album list endpoints once and adopt the first that returns album objects. |
+| `applyNameOrder(list)` | 6241 | The rotation: explicit order first, then discovery order (unless pinned). Order the rotation by NAME when the names are known — ALBUM_ORDER_BY_NAME lists the albums you want handed out first, by their label, so the or… |
+| `albumRotation()` | 6256 | The ordered album list the unlock hotkey walks, with retired albums removed. |
+| `fetchAlbumShares(albumId, force)` | 6277 | Authoritative share list for one album, cached for ALBUM_SHARES_CACHE_MS. A failed read returns null (NOT an empty set) so a network blip can never be mistaken for "nobody has this album" and cause a duplicate share. |
+| `ledgerHas(pid, albumId)` | 6309 | True when this album has already been shared with this profile. |
+| `ledgerAdd(pid, albumId)` | 6314 | Record that an album was shared with a profile. |
+| `ledgerDrop(pid, albumId)` | 6320 | Forget that an album was shared with a profile. |
+| `shareAlbumWith(albumId, pid)` | 6329 | POST one share. Returns true only on a 2xx. |
+| `unshareAlbumFrom(albumId, pid)` | 6360 | Un-share — CONFIRMED from a HAR of the app's own "Stop Sharing" button (web.grindr.com6.har): a PUT (not DELETE) to /unshares, with the same body shape as a share and a FRESH uuid shareId. The v0.19 three-shape DELETE… |
+| `reshareAlbum(pid, albumId)` | 6389 | Unshare then re-share, which is what the app makes you do by hand to re-notify someone who already has the album (the "Stop Sharing" button in the Media picker). Deliberate, never automatic. |
+| `shareNextAlbumWith(profileId)` | 6402 | The 'u' action: give this profile the next album in the rotation they do not already have. "Already have" is answered by the server's own share list, with the local ledger as a fallback when that read fails. |
+| `hotkeyUnlockAlbum()` | 6445 | The 'u' hotkey. Target resolution is the shared resolveTargetProfileId chain (hover / URL / open view / cursor / last-fetched profile). Never advances the cursor — unlocking is something you do to the profile you're a… |
 
 ## Touch: long-press a tile to block
 
 | Function | Line | Description |
 |---|---|---|
-| `clearLongPress()` | 6484 | Cancel any pending long-press (movement, lift, or multi-touch). |
-| `onTouchStartBlock(e)` | 6489 | Arm the long-press-to-block timer on a single-finger press over a tile. |
-| `onTouchMoveBlock(e)` | 6510 | Cancel the long-press if the finger moves far enough to be a scroll. |
-| `syncLongPressStyle()` | 6526 | iOS Safari pops a save/share callout on a long-press over an image, which would fight the block gesture. Suppress it on profile photos ONLY while long-press is enabled (and remove the style when it's turned back off). |
-| `isOnChatPage()` | 6567 | True when the current URL is Grindr's chat page (web.grindr.com/chat[/...]); gates the shift+right-click intro-message gesture below. |
+| `clearLongPress()` | 6508 | Cancel any pending long-press (movement, lift, or multi-touch). |
+| `onTouchStartBlock(e)` | 6513 | Arm the long-press-to-block timer on a single-finger press over a tile. |
+| `onTouchMoveBlock(e)` | 6534 | Cancel the long-press if the finger moves far enough to be a scroll. |
+| `syncLongPressStyle()` | 6550 | iOS Safari pops a save/share callout on a long-press over an image, which would fight the block gesture. Suppress it on profile photos ONLY while long-press is enabled (and remove the style when it's turned back off). |
+| `isOnChatPage()` | 6591 | True when the current URL is Grindr's chat page (web.grindr.com/chat[/...]); gates the shift+right-click intro-message gesture below. |
 
 ## Console-surface arming
 
 | Function | Line | Description |
 |---|---|---|
-| `armConsole(on)` | 6887 | Arm or disarm the acting console functions for this tab. |
-| `gated(name, fn)` | 6894 | Wrap an acting function so it refuses until armed. |
+| `armConsole(on)` | 6911 | Arm or disarm the acting console functions for this tab. |
+| `gated(name, fn)` | 6918 | Wrap an acting function so it refuses until armed. |
 
 ## User settings (HUD "settings" tab)
 
 | Function | Line | Description |
 |---|---|---|
-| `loadSettings()` | 7302 | Restore user settings — copy only keys whose stored value is a known option. |
-| `setSetting(key, value)` | 7312 | Change one setting, persist it, and redraw the HUD. |
-| `applyAfterAction(mode, profileId, onGrid)` | 7326 | Carry out whichever after-action the user chose. Shared by greet and block so the two behave consistently. |
-| `hudState()` | 7361 | Snapshot of everything the HUD displays. Doubles as its re-render fingerprint. |
-| `describeTargetState(id)` | 7390 | Why a key might refuse. This is the line that would have explained the last two failures immediately. |
-| `buildHud()` | 7404 | Create the HUD element, restore its position, and make it draggable. |
+| `loadSettings()` | 7326 | Restore user settings — copy only keys whose stored value is a known option. |
+| `setSetting(key, value)` | 7336 | Change one setting, persist it, and redraw the HUD. |
+| `applyAfterAction(mode, profileId, onGrid)` | 7350 | Carry out whichever after-action the user chose. Shared by greet and block so the two behave consistently. |
+| `hudState()` | 7385 | Snapshot of everything the HUD displays. Doubles as its re-render fingerprint. |
+| `describeTargetState(id)` | 7428 | Why a key might refuse. This is the line that would have explained the last two failures immediately. |
+| `buildHud()` | 7442 | Create the HUD element, restore its position, and make it draggable. |
 
 ## Draggable HUD
 
 | Function | Line | Description |
 |---|---|---|
-| `makeHudDraggable(el)` | 7438 | Let the HUD be dragged by any non-button part of itself. |
-| `placeHud(left, top)` | 7483 | Position the HUD, clamped inside the viewport. |
-| `persistHudPosition()` | 7496 | Remember where the HUD was dragged to. |
-| `restoreHudPosition()` | 7502 | Put the HUD back where it was left. |
-| `hudRow(k, v)` | 7513 | One label/value row in the HUD. |
-| `renderHud()` | 7523 | Draw the HUD for the active tab. Called only when hudState() changes. |
+| `makeHudDraggable(el)` | 7476 | Let the HUD be dragged by any non-button part of itself. |
+| `placeHud(left, top)` | 7521 | Position the HUD, clamped inside the viewport. |
+| `persistHudPosition()` | 7534 | Remember where the HUD was dragged to. |
+| `restoreHudPosition()` | 7540 | Put the HUD back where it was left. |
+| `hudRow(k, v)` | 7551 | One label/value row in the HUD. |
+| `renderHud()` | 7561 | Draw the HUD for the active tab. Called only when hudState() changes. |
 
 ## Touch action buttons
 
 | Function | Line | Description |
 |---|---|---|
-| `refreshHud()` | 7719 | Redraw the HUD if it is open. |
-| `beginRebind(action, row)` | 7724 | Capture the next keypress and bind it to an action. |
-| `renderSettingsTab()` | 7761 | The settings tab. Each row is a labelled set of choices; clicking one stores it immediately. Kept to behaviour the user actually asked to control rather than exposing every constant in the file. |
-| `renderGreetingsTab()` | 7819 | The greetings tab: a plain textarea, one phrase per line. Deliberately not a list of add/remove rows — editing prose is what a textarea is for, and this list gets rewritten wholesale far more often than it gets append… |
-| `persistHud()` | 7854 | Remember whether the HUD is open. |
-| `toggleHud()` | 7856 | Show or hide the HUD. |
-| `installDiagClickCapture()` | 7862 | Start recording clicks, with the profile id each one resolves to. |
-| `installDiagConsoleCapture()` | 7889 | Mirror the page's own console.error/warn into the recording. |
-| `startDiagRecording()` | 7910 | Begin a diagnostic recording. |
-| `stopDiagRecording()` | 7921 | End the recording. |
-| `saveDiagReport()` | 7931 | Build a plain-text report and hand it to the browser as a download. Includes the state a reader would otherwise have to ask for: build, keymap, where we were, what the lists look like, and the captured timeline. |
-| `saveDiagHar()` | 8017 | Download just the network capture, as a real HAR 1.2 file. |
-| `installHud()` | 8041 | Mount the HUD and start its refresh timer. |
+| `refreshHud()` | 7776 | Redraw the HUD if it is open. |
+| `beginRebind(action, row)` | 7781 | Capture the next keypress and bind it to an action. |
+| `renderSettingsTab()` | 7818 | The settings tab. Each row is a labelled set of choices; clicking one stores it immediately. Kept to behaviour the user actually asked to control rather than exposing every constant in the file. |
+| `renderGreetingsTab()` | 7876 | The greetings tab: a plain textarea, one phrase per line. Deliberately not a list of add/remove rows — editing prose is what a textarea is for, and this list gets rewritten wholesale far more often than it gets append… |
+| `persistHud()` | 7911 | Remember whether the HUD is open. |
+| `toggleHud()` | 7913 | Show or hide the HUD. |
+| `installDiagClickCapture()` | 7919 | Start recording clicks, with the profile id each one resolves to. |
+| `installDiagConsoleCapture()` | 7946 | Mirror the page's own console.error/warn into the recording. |
+| `startDiagRecording()` | 7967 | Begin a diagnostic recording. |
+| `stopDiagRecording()` | 7978 | End the recording. |
+| `saveDiagReport()` | 7988 | Build a plain-text report and hand it to the browser as a download. Includes the state a reader would otherwise have to ask for: build, keymap, where we were, what the lists look like, and the captured timeline. |
+| `saveDiagHar()` | 8074 | Download just the network capture, as a real HAR 1.2 file. |
+| `installHud()` | 8098 | Mount the HUD and start its refresh timer. |

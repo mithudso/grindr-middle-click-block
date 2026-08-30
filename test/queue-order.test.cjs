@@ -104,3 +104,24 @@ test('nextRunnableIndex still honours a per-job retry backoff', () => {
   assert.strictEqual(H.nextRunnableIndex([{ ...backedOff, notBefore: now }], now, false, false), 0,
     'notBefore exactly now is ready — the comparison is inclusive');
 });
+
+// ── windowResetMinutes ──────────────────────────────────────────────────────
+// WHY: the HUD's "frees 1 in Nm". The budgets are rolling windows, not buckets
+// that empty on the hour, so the next slot appears when the OLDEST call in that
+// window ages out — not at some fixed reset time. Getting this wrong reads to a
+// user as the cooldown being broken.
+// MUST: round UP, so a window with seconds left never reports 0m and claims to
+// have reset; and report 0 when the window is empty.
+test('windowResetMinutes reports when the next slot frees, rounding up', () => {
+  const f = H.windowResetMinutes;
+  const HOUR = 3_600_000;
+  const now = 1_000_000_000;
+  assert.strictEqual(f(undefined, now), 0, 'an empty window has nothing to wait for');
+  assert.strictEqual(f(0, now), 0, 'no timestamp means nothing to wait for');
+  assert.strictEqual(f(now, now), 60, 'a call made right now frees in a full hour');
+  assert.strictEqual(f(now - HOUR / 2, now), 30, 'half an hour in, half an hour to go');
+  assert.strictEqual(f(now - HOUR + 40_000, now), 1,
+    '40s remaining must round up to 1m — reporting 0m would claim it had already reset');
+  assert.strictEqual(f(now - HOUR, now), 0, 'exactly an hour old has aged out');
+  assert.strictEqual(f(now - 2 * HOUR, now), 0, 'never negative for a stale entry');
+});
