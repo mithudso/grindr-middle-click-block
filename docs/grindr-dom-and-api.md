@@ -165,6 +165,22 @@ out locally; the server does not. So a hide is invisible until the client remove
 the card. Any tool doing this must hide the card itself — immediately, not on a
 timer — or the block looks like it failed.
 
+### Hide vs block are genuinely different relationships
+
+Verified live by performing each and then reading both lists back:
+
+| Action | Call | Lands in | Removes from cascade? |
+|---|---|---|---|
+| **Hide** | `POST /api/v1/me/hides/{id}` → 200 | `/api/v1/hides` (3322) | **No** |
+| **Block** | `POST /api/v3/me/blocks/{id}` → 200 `{"updateTime":0}` | `/api/v4/blocks` (94) | yes |
+
+A blocked id appears in the **blocks** list and not in hides. `DELETE` on
+`/api/v3/me/blocks/{id}` returns 200 and reverses it. Note the asymmetry:
+**`DELETE /api/v1/me/hides/{id}` returns 501** — there is no un-hide via that verb.
+
+Grindr's own card menu fires the *hide*, which is why copying it produced blocks
+that never removed anyone from the feed.
+
 Hide and block are **mutually exclusive states**. Firing a block after a successful
 hide silently undoes it.
 
