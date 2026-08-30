@@ -188,6 +188,41 @@ hide silently undoes it.
 profiles keep arriving in cascade payloads, so local DOM enforcement must continue
 even after the server confirms the hide.
 
+#### Entries that will never become real blocks (measured 2026-08-30)
+
+A consequence of the two rules above, worth stating as a number because it looks
+like a bug and is not. On the live account, a local block list of 1496 against
+Grindr's 1656 real blocks:
+
+| | count |
+|---|---|
+| present in the **blocks** list | 1105 |
+| present in the **hides** list only | 156 |
+| present in **neither** list | 235 |
+| **cannot be converted** | **391** |
+
+All 391 answer `POST /api/v3/me/blocks/{id}` with `200 {"updateTime":0}` and never
+appear in `/api/v4/blocks`. Verified live: `remaining 391 → upgrade 5 → reconcile
+→ remaining 391, promoted 0`.
+
+* The **156** are hidden, and hide and block are mutually exclusive, so the block
+  is a no-op. They cannot be un-hidden either — `DELETE /api/v1/me/hides/{id}` is
+  the 501 noted above. There is no known route from hidden to blocked.
+* The **235** are in neither list and almost certainly no longer exist (deleted or
+  banned accounts). Grindr accepts the write and discards it.
+
+**Decision (operator, 2026-08-30): leave them permanently hidden-not-blocked.**
+Do not add an unhide-then-block path; there is no working unhide verb, and the
+question has been asked and answered. v0.60.0 retires an entry after
+`MAX_UPGRADE_ATTEMPTS` completed POSTs the next authoritative walk does not
+reflect. Retired entries stay blocked LOCALLY — the card is still hidden and the
+enforcement sweep still applies — they are excluded only from the hide→block
+backlog, so that backlog can reach zero. `__grindrBlock_stuckBlocks()` lists them.
+
+Note the walk itself is NOT implicated here and was suspected twice without
+cause: a capture shows pages 1–17 read, an empty page 18 ending the loop, and
+1656 ids collected, matching the total Grindr reports exactly.
+
 ### Albums
 
 | Call | Result |
