@@ -25,11 +25,20 @@ if (undocumented.length) {
   problems.push(`${undocumented.length} function(s) with no description above them:\n    ${undocumented.join('\n    ')}`);
 }
 
-// 2. The version appears in both places and agrees.
+// 2. The version agrees in all THREE places it is written.
+// SCRIPT_VERSION is the one the running script reports — it is what the HUD shows
+// and what every diagnostic capture is stamped with. v0.52.0 shipped with the
+// header bumped and this constant left behind, so a capture from that install was
+// labelled 0.51.0 and would have sent a later diagnosis after the wrong version.
+// The header alone is not enough to check.
 const headerVersion = (src.match(/@version\s+([0-9.]+)/) || [])[1];
 const pkgVersion = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version;
+const runtimeVersion = (src.match(/const SCRIPT_VERSION\s*=\s*'([0-9.]+)'/) || [])[1];
 if (headerVersion !== pkgVersion) {
   problems.push(`version mismatch: @version is ${headerVersion}, package.json is ${pkgVersion}`);
+}
+if (runtimeVersion !== headerVersion) {
+  problems.push(`version mismatch: SCRIPT_VERSION is ${runtimeVersion}, @version is ${headerVersion} — the running script would report the wrong version in the HUD and in every diagnostic capture`);
 }
 
 // 3. The function reference is in step with the source.

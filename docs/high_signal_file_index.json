@@ -59,7 +59,7 @@
     {
       "path": "Grindr Middle-Click Block.user.js",
       "purpose": "The entire userscript. One IIFE: observation (patched fetch/XHR/WebSocket), actuation (block queue, greet flow, album rotation, DOM sweep), and surface (hotkeys, HUD, diagnostic recorder).",
-      "bytes": 512858,
+      "bytes": 518654,
       "kind": "source"
     },
     {
@@ -173,7 +173,7 @@
     {
       "path": "docs/codebase-overview.md",
       "purpose": "This file map.",
-      "bytes": 4629,
+      "bytes": 8156,
       "kind": "doc"
     },
     {
@@ -185,7 +185,7 @@
     {
       "path": "docs/function-reference.md",
       "purpose": "Every named function, generated from source.",
-      "bytes": 47119,
+      "bytes": 47876,
       "kind": "doc"
     },
     {
@@ -197,7 +197,7 @@
     {
       "path": "docs/high_signal_file_index.json",
       "purpose": "Machine-readable index of the same, for retrieval.",
-      "bytes": 7894,
+      "bytes": 14050,
       "kind": "config"
     },
     {
@@ -299,7 +299,7 @@
     {
       "path": "scripts/check-docs.mjs",
       "purpose": "CI drift gate: functions documented, version consistent, reference current, links resolve, no real identifiers.",
-      "bytes": 3264,
+      "bytes": 3974,
       "kind": "script"
     },
     {
