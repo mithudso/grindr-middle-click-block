@@ -59,7 +59,7 @@
     {
       "path": "Grindr Middle-Click Block.user.js",
       "purpose": "The entire userscript. One IIFE: observation (patched fetch/XHR/WebSocket), actuation (block queue, greet flow, album rotation, DOM sweep), and surface (hotkeys, HUD, diagnostic recorder).",
-      "bytes": 518654,
+      "bytes": 522302,
       "kind": "source"
     },
     {
@@ -173,7 +173,7 @@
     {
       "path": "docs/codebase-overview.md",
       "purpose": "This file map.",
-      "bytes": 9251,
+      "bytes": 9523,
       "kind": "doc"
     },
     {
@@ -185,7 +185,7 @@
     {
       "path": "docs/function-reference.md",
       "purpose": "Every named function, generated from source.",
-      "bytes": 47876,
+      "bytes": 48392,
       "kind": "doc"
     },
     {
@@ -197,7 +197,7 @@
     {
       "path": "docs/high_signal_file_index.json",
       "purpose": "Machine-readable index of the same, for retrieval.",
-      "bytes": 16435,
+      "bytes": 16799,
       "kind": "config"
     },
     {
@@ -383,7 +383,7 @@
     {
       "path": "scripts/gen-codebase-index.mjs",
       "purpose": "Regenerates this overview and the file index.",
-      "bytes": 10649,
+      "bytes": 10895,
       "kind": "script"
     },
     {
@@ -420,6 +420,12 @@
       "path": "test/regression.test.cjs",
       "purpose": "Bugs that actually shipped, each named in a comment.",
       "bytes": 4614,
+      "kind": "test"
+    },
+    {
+      "path": "test/server-blocks.test.cjs",
+      "purpose": "The drain backlog's subtrahend, and why it has to survive a reload. WHY THIS FILE EXISTS: the reconcile button's number \"kept going up\". The backlog is `blockedProfileIds \\ serverBlockedIds`. blockedProfileIds is persisted; serverBlocked…",
+      "bytes": 3876,
       "kind": "test"
     },
     {
