@@ -59,7 +59,7 @@
     {
       "path": "Grindr Middle-Click Block.user.js",
       "purpose": "The entire userscript. One IIFE: observation (patched fetch/XHR/WebSocket), actuation (block queue, greet flow, album rotation, DOM sweep), and surface (hotkeys, HUD, diagnostic recorder).",
-      "bytes": 541229,
+      "bytes": 548086,
       "kind": "source"
     },
     {
@@ -173,7 +173,7 @@
     {
       "path": "docs/codebase-overview.md",
       "purpose": "This file map.",
-      "bytes": 10354,
+      "bytes": 10635,
       "kind": "doc"
     },
     {
@@ -185,7 +185,7 @@
     {
       "path": "docs/function-reference.md",
       "purpose": "Every named function, generated from source.",
-      "bytes": 49471,
+      "bytes": 49973,
       "kind": "doc"
     },
     {
@@ -197,7 +197,7 @@
     {
       "path": "docs/high_signal_file_index.json",
       "purpose": "Machine-readable index of the same, for retrieval.",
-      "bytes": 17899,
+      "bytes": 18269,
       "kind": "config"
     },
     {
@@ -401,7 +401,7 @@
     {
       "path": "test/drain-e2e.test.cjs",
       "purpose": "Does the drain actually drain? An end-to-end check against a fake Grindr. WHY THIS FILE EXISTS: three separate fixes to the hide→block drain were each declared done on the strength of a code reading — cap starvation (v0.52/0.53), the pag…",
-      "bytes": 12928,
+      "bytes": 12929,
       "kind": "test"
     },
     {
@@ -456,6 +456,12 @@
       "path": "test/stubs.cjs",
       "purpose": "Minimal browser stubs. Deliberately dumb: every DOM query returns empty, so tests exercise logic rather than a simulated page.",
       "bytes": 3277,
+      "kind": "test"
+    },
+    {
+      "path": "test/unconvertible-blocks.test.cjs",
+      "purpose": "A backlog that cannot be finished must still reach zero. WHY THIS FILE IS SEPARATE: the local block list is read from storage once, at load. Seeding it after the script has booted does nothing, so this needs a fresh process — the same re…",
+      "bytes": 5049,
       "kind": "test"
     },
     {
