@@ -38,7 +38,7 @@ globalThis.fetch = async (url, opts = {}) => {
   const p = u.match(/\/api\/v4\/blocks\?page=(\d+)/);
   if (p) return res(200, listBody([...serverBlocks].slice((+p[1] - 1) * 100, +p[1] * 100)));
   if (u.includes('/api/v1/hides')) return res(200, listBody(serverHides));
-  const w = u.match(/\/api\/v3\/me\/blocks\/(\d+)$/);
+  const w = u.match(/\/api\/v[13]\/me\/(?:blocks|hides)\/(\d+)$/);
   if (w && m === 'POST') {
     // Accept every write. Silently drop the ones that will never take — which is
     // exactly what 200 {"updateTime":0} with no subsequent listing looks like.
@@ -110,7 +110,7 @@ test('a gesture on an un-convertible profile hides it instead of re-POSTing', as
   const realFetch = globalThis.fetch;
   globalThis.fetch = async (url, opts = {}) => {
     const u = String(url);
-    if (/\/api\/v3\/me\/blocks\/\d+$/.test(u) && (opts.method || 'GET') === 'POST') seen.push(u);
+    if (/\/api\/v[13]\/me\/(?:blocks|hides)\/\d+$/.test(u) && (opts.method || 'GET') === 'POST') seen.push(u);
     return realFetch(url, opts);
   };
 
@@ -135,7 +135,7 @@ test('a gesture on an already-blocked profile does not re-POST either', async ()
   const realFetch = globalThis.fetch;
   globalThis.fetch = async (url, opts = {}) => {
     const u = String(url);
-    if (/\/api\/v3\/me\/blocks\/\d+$/.test(u) && (opts.method || 'GET') === 'POST') seen.push(u);
+    if (/\/api\/v[13]\/me\/(?:blocks|hides)\/\d+$/.test(u) && (opts.method || 'GET') === 'POST') seen.push(u);
     return realFetch(url, opts);
   };
   G.__grindrBlock_block(already);
