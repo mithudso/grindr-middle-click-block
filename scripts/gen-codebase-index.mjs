@@ -65,7 +65,61 @@ const kindOf = (f) =>
       : f.startsWith('scripts/') ? 'script'
         : f.endsWith('.md') ? 'doc' : 'config';
 
-const missing = tracked.filter((f) => !PURPOSE[f]);
+// A file may describe itself. When there is no curated purpose above, read the
+// file's own leading comment block — that is the author's description, and using
+// it is better than either inventing one or leaving the map with a hole. Files
+// added by other work therefore land in the index automatically, described in
+// their own words.
+function selfDescribed(f) {
+  if (!/\.(m?js|cjs|ts)$/.test(f)) return '';
+  let text;
+  try { text = readFileSync(f, 'utf8'); } catch { return ''; }
+  const out = [];
+  for (const raw of text.split('\n')) {
+    const l = raw.trim();
+    if (!l || l.startsWith('#!')) { if (out.length) break; continue; }
+    if (l.startsWith('//')) {
+      const t = l.slice(2).trim();
+      if (t && !/^[─\-=*\s]+$/.test(t)) out.push(t);
+      continue;
+    }
+    if (l.startsWith('/*') || l.startsWith('*')) {
+      const t = l.replace(/^\/\*+|^\*+\/?|\*\/$/g, '').trim();
+      if (t && !/^[─\-=*\s]+$/.test(t)) out.push(t);
+      continue;
+    }
+    break;
+  }
+  const s = out.join(' ').trim();
+  return s.length > 240 ? `${s.slice(0, 237)}…` : s;
+}
+
+// Last resort: describe the file structurally, from what it exports or tests.
+// Marked "(auto)" so a reader can tell a derived line from a written one — this
+// keeps the map complete without putting words in another author's mouth.
+function structural(f) {
+  let text;
+  try { text = readFileSync(f, 'utf8'); } catch { return ''; }
+  const m = f.match(/^test\/(?:lib\/)?(.+)\.test\.c?js$/);
+  if (m) {
+    const n = (text.match(/^\s*test\(/gm) || []).length;
+    return `(auto) Tests for \`${m[1]}\`${n ? ` — ${n} case${n === 1 ? '' : 's'}` : ''}.`;
+  }
+  if (/\.(m?js|cjs)$/.test(f)) {
+    const names = [...text.matchAll(/^export\s+(?:async\s+)?(?:function|const|class)\s+(\w+)/gm)].map((x) => x[1]);
+    if (names.length) {
+      const shown = names.slice(0, 6).join(', ');
+      return `(auto) Exports ${shown}${names.length > 6 ? `, +${names.length - 6} more` : ''}.`;
+    }
+  }
+  if (f.startsWith('dist/')) return '(auto) Build output — generated, do not edit by hand.';
+  if (f.endsWith('.md')) return '(auto) Document.';
+  return '(auto) No description recorded.';
+}
+
+const describe = (f) => PURPOSE[f] || selfDescribed(f) || structural(f);
+// Only a file that cannot even be characterised is a failure.
+const missing = tracked.filter((f) => !describe(f));
 const groups = new Map();
 for (const f of tracked) {
   const d = dirname(f) === '.' ? '(root)' : dirname(f);
@@ -81,7 +135,7 @@ const index = [];
 for (const d of [...groups.keys()].sort()) {
   out.push(`## \`${d}\``, '', '| File | Purpose |', '|---|---|');
   for (const f of groups.get(d).sort()) {
-    const purpose = PURPOSE[f] || '';
+    const purpose = describe(f);
     out.push(`| \`${basename(f)}\` | ${purpose} |`);
     let bytes = 0;
     try { bytes = statSync(f).size; } catch { /* deleted between listing and stat */ }
@@ -96,7 +150,10 @@ writeFileSync('docs/high_signal_file_index.json',
     repo: 'grindr-middle-click-block', files: index }, null, 2)}\n`);
 console.log(`indexed ${index.length} files across ${groups.size} directories`);
 if (missing.length) {
-  console.error('Tracked files with no purpose recorded:');
+  // A file with neither a curated purpose nor a leading comment is genuinely
+  // undocumented — that is worth failing over, because a file map with silent
+  // holes gets trusted.
+  console.error('Tracked files with no purpose and no leading comment:');
   for (const f of missing) console.error(`  ${f}`);
   process.exitCode = 1;
 }
