@@ -99,6 +99,46 @@ it sits *left* of the input so it wins on DOM order. Anchor the match
 
 ---
 
+## 3b. The profile overlay (`/?profile=true`)
+
+**The overlay carries its own composer. There is no Chat button to press.**
+
+When a profile is open, the detail pane ends in a `Say something...` composer —
+`<input type="text">`, ~1152px wide. A greet should type into it directly. The only
+element on the page named `Chat` at that moment belongs to the floating chat drawer,
+not the profile.
+
+### Two composers can be on screen at once
+
+| Composer | Shape | Belongs to |
+|---|---|---|
+| `input` ~1152px @ x1801 | wide, under the profile | **the open profile** |
+| `textarea` ~296px @ x2844 | narrow, bottom-right | the floating chat drawer |
+
+A naive scorer prefers the **drawer** (a `textarea` earns a type bonus), which would
+send the greeting into whatever conversation the drawer had open — a message to the
+wrong person. Discriminate with drawer-only controls, bounded to ~5 ancestors:
+
+```
+[aria-label="close drawer"], [aria-label="Open chat list"], [data-testid^="chat-button"]
+```
+
+Verified: marks the 296px textarea as drawer, the 1152px input as not.
+
+### `data-testid*="cascade"` does NOT identify the profile view
+
+It matches `cascadeCellContainer` — a **grid tile**. A profile-view selector including
+it resolves to a 559×745 tile containing **zero buttons**, which is exactly why a
+Chat-button search kept coming back empty.
+
+### The sidebar is full of decoys
+
+~190 elements carry `data-testid="chat-button-<name>"` — those are **inbox
+conversation rows**, not the profile's chat control. Any `[data-testid*="chat"]`
+match will hit all of them.
+
+---
+
 ## 4. API
 
 Base `https://web.grindr.com`. All authed calls need `Authorization: Grindr3 <JWT>`
