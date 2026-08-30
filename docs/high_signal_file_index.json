@@ -17,7 +17,7 @@
     {
       "path": ".gitignore",
       "purpose": "Ignore rules, including local captures and the identifier mapping.",
-      "bytes": 98,
+      "bytes": 91,
       "kind": "config"
     },
     {
@@ -197,7 +197,7 @@
     {
       "path": "docs/high_signal_file_index.json",
       "purpose": "Machine-readable index of the same, for retrieval.",
-      "bytes": 14050,
+      "bytes": 14051,
       "kind": "config"
     },
     {
@@ -291,6 +291,108 @@
       "kind": "config"
     },
     {
+      "path": "notes/archive 2.md",
+      "purpose": "(auto) Document.",
+      "bytes": 13,
+      "kind": "doc"
+    },
+    {
+      "path": "notes/archive.md",
+      "purpose": "(auto) Document.",
+      "bytes": 1637,
+      "kind": "doc"
+    },
+    {
+      "path": "notes/now 2.md",
+      "purpose": "(auto) Document.",
+      "bytes": 0,
+      "kind": "doc"
+    },
+    {
+      "path": "notes/now.md",
+      "purpose": "(auto) Document.",
+      "bytes": 0,
+      "kind": "doc"
+    },
+    {
+      "path": "notes/recent 2.md",
+      "purpose": "(auto) Document.",
+      "bytes": 183,
+      "kind": "doc"
+    },
+    {
+      "path": "notes/recent.md",
+      "purpose": "(auto) Document.",
+      "bytes": 28,
+      "kind": "doc"
+    },
+    {
+      "path": "notes/today-2026-06-14.done.md",
+      "purpose": "(auto) Document.",
+      "bytes": 132,
+      "kind": "doc"
+    },
+    {
+      "path": "notes/today-2026-06-15 2.done.md",
+      "purpose": "(auto) Document.",
+      "bytes": 728,
+      "kind": "doc"
+    },
+    {
+      "path": "notes/today-2026-06-15.done.md",
+      "purpose": "(auto) Document.",
+      "bytes": 1094,
+      "kind": "doc"
+    },
+    {
+      "path": "notes/today-2026-06-20.done.md",
+      "purpose": "(auto) Document.",
+      "bytes": 615,
+      "kind": "doc"
+    },
+    {
+      "path": "notes/today-2026-06-21.done.md",
+      "purpose": "(auto) Document.",
+      "bytes": 845,
+      "kind": "doc"
+    },
+    {
+      "path": "notes/today-2026-06-22.done.md",
+      "purpose": "(auto) Document.",
+      "bytes": 1395,
+      "kind": "doc"
+    },
+    {
+      "path": "notes/today-2026-06-23.done.md",
+      "purpose": "(auto) Document.",
+      "bytes": 3744,
+      "kind": "doc"
+    },
+    {
+      "path": "notes/today-2026-07-20.done.md",
+      "purpose": "(auto) Document.",
+      "bytes": 199,
+      "kind": "doc"
+    },
+    {
+      "path": "notes/today-2026-07-24.done.md",
+      "purpose": "(auto) Document.",
+      "bytes": 230,
+      "kind": "doc"
+    },
+    {
+      "path": "notes/today-2026-08-01.done.md",
+      "purpose": "(auto) Document.",
+      "bytes": 852,
+      "kind": "doc"
+    },
+    {
+      "path": "notes/today-2026-08-23.md",
+      "purpose": "(auto) Document.",
+      "bytes": 580,
+      "kind": "doc"
+    },
+    {
       "path": "scripts/build-lib.mjs",
       "purpose": "Zero-dependency build: concatenate the lib/ ES modules (all first-party, no external imports) in dependency order into a single-file ESM bundle and a window.Grindr IIFE global bundle. No bundler.",
       "bytes": 2127,
@@ -330,6 +432,12 @@
       "path": "test/load.test.cjs",
       "purpose": "Boots the whole IIFE — catches \"the script dies at document-start\", which a syntax check cannot.",
       "bytes": 2157,
+      "kind": "test"
+    },
+    {
+      "path": "test/queue-order.test.cjs",
+      "purpose": "Block-queue ordering and the split hourly budget. WHY THIS FILE EXISTS: a capture of \"blocks are not working at all\" showed they were never failing. One shared rolling-hour budget let the auto-drain — a background migration of ~1400 entr…",
+      "bytes": 6260,
       "kind": "test"
     },
     {
