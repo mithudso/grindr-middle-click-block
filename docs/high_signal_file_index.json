@@ -59,7 +59,7 @@
     {
       "path": "Grindr Middle-Click Block.user.js",
       "purpose": "The entire userscript. One IIFE: observation (patched fetch/XHR/WebSocket), actuation (block queue, greet flow, album rotation, DOM sweep), and surface (hotkeys, HUD, diagnostic recorder).",
-      "bytes": 522302,
+      "bytes": 524725,
       "kind": "source"
     },
     {
@@ -173,7 +173,7 @@
     {
       "path": "docs/codebase-overview.md",
       "purpose": "This file map.",
-      "bytes": 9523,
+      "bytes": 10072,
       "kind": "doc"
     },
     {
@@ -197,7 +197,7 @@
     {
       "path": "docs/high_signal_file_index.json",
       "purpose": "Machine-readable index of the same, for retrieval.",
-      "bytes": 16799,
+      "bytes": 17528,
       "kind": "config"
     },
     {
@@ -391,6 +391,18 @@
       "purpose": "Regenerates the function reference from source.",
       "bytes": 3085,
       "kind": "script"
+    },
+    {
+      "path": "test/drain-cold-start.test.cjs",
+      "purpose": "The drain must bootstrap itself from a cold start, with nothing pre-seeded. WHY THIS FILE IS SEPARATE: it needs a fresh module in a fresh process, with no snapshot in storage and no reconcile already performed — the state you are actuall…",
+      "bytes": 5256,
+      "kind": "test"
+    },
+    {
+      "path": "test/drain-e2e.test.cjs",
+      "purpose": "Does the drain actually drain? An end-to-end check against a fake Grindr. WHY THIS FILE EXISTS: three separate fixes to the hide→block drain were each declared done on the strength of a code reading — cap starvation (v0.52/0.53), the pag…",
+      "bytes": 12927,
+      "kind": "test"
     },
     {
       "path": "test/helpers.test.cjs",
