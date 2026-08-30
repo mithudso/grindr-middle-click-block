@@ -59,7 +59,7 @@
     {
       "path": "Grindr Middle-Click Block.user.js",
       "purpose": "The entire userscript. One IIFE: observation (patched fetch/XHR/WebSocket), actuation (block queue, greet flow, album rotation, DOM sweep), and surface (hotkeys, HUD, diagnostic recorder).",
-      "bytes": 524725,
+      "bytes": 528564,
       "kind": "source"
     },
     {
@@ -185,7 +185,7 @@
     {
       "path": "docs/function-reference.md",
       "purpose": "Every named function, generated from source.",
-      "bytes": 48392,
+      "bytes": 48664,
       "kind": "doc"
     },
     {
@@ -425,7 +425,7 @@
     {
       "path": "test/queue-order.test.cjs",
       "purpose": "Block-queue ordering and the split hourly budget. WHY THIS FILE EXISTS: a capture of \"blocks are not working at all\" showed they were never failing. One shared rolling-hour budget let the auto-drain — a background migration of ~1400 entr…",
-      "bytes": 6260,
+      "bytes": 7693,
       "kind": "test"
     },
     {
