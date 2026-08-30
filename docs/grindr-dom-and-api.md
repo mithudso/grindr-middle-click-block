@@ -185,8 +185,13 @@ traffic on 2026-08-30, while the operator used Grindr's UI:
 POST https://web.grindr.com/api/v1/me/hides/{id}      → 200 {"updateTime":0}
 ```
 
-**This is the write that actually removes someone.** Confirmed by the operator:
-"no blocking mechanism sticks except for theirs."
+**This is the write that actually removes someone.** Diagnosed from the operator's
+report — "no blocking mechanism sticks except for theirs" — and then **confirmed
+in use on 2026-08-30**: after v0.62.0 switched gestures to this endpoint, blocked
+profiles disappeared and stayed gone.
+
+That confirmation matters more than the diagnosis. Every previous theory about
+this endpoint pair also looked right at the time.
 
 `POST /api/v3/me/blocks/{id}` also answers `200 {"updateTime":0}` and does
 populate the blocks list — a paginated walk reads 1656 entries — but the profile
