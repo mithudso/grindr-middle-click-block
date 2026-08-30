@@ -59,7 +59,7 @@
     {
       "path": "Grindr Middle-Click Block.user.js",
       "purpose": "The entire userscript. One IIFE: observation (patched fetch/XHR/WebSocket), actuation (block queue, greet flow, album rotation, DOM sweep), and surface (hotkeys, HUD, diagnostic recorder).",
-      "bytes": 551129,
+      "bytes": 554369,
       "kind": "source"
     },
     {
@@ -191,7 +191,7 @@
     {
       "path": "docs/grindr-dom-and-api.md",
       "purpose": "The interaction library: observed routes, DOM shapes, endpoints and traps, each with how it was confirmed.",
-      "bytes": 15238,
+      "bytes": 15944,
       "kind": "doc"
     },
     {
@@ -395,13 +395,13 @@
     {
       "path": "test/drain-cold-start.test.cjs",
       "purpose": "The drain must bootstrap itself from a cold start, with nothing pre-seeded. WHY THIS FILE IS SEPARATE: it needs a fresh module in a fresh process, with no snapshot in storage and no reconcile already performed — the state you are actuall…",
-      "bytes": 5256,
+      "bytes": 5269,
       "kind": "test"
     },
     {
       "path": "test/drain-e2e.test.cjs",
       "purpose": "Does the drain actually drain? An end-to-end check against a fake Grindr. WHY THIS FILE EXISTS: three separate fixes to the hide→block drain were each declared done on the strength of a code reading — cap starvation (v0.52/0.53), the pag…",
-      "bytes": 12929,
+      "bytes": 12995,
       "kind": "test"
     },
     {
@@ -443,7 +443,7 @@
     {
       "path": "test/session-dead-recovery.test.cjs",
       "purpose": "A transient 401 must not freeze the queue forever. WHY THIS FILE IS SEPARATE: it needs a fresh process. The shared end-to-end file forces reconciles, and a reconcile stamps its 30-minute throttle whether or not it succeeds — so by the ti…",
-      "bytes": 5053,
+      "bytes": 5066,
       "kind": "test"
     },
     {
@@ -461,7 +461,7 @@
     {
       "path": "test/unconvertible-blocks.test.cjs",
       "purpose": "A backlog that cannot be finished must still reach zero. WHY THIS FILE IS SEPARATE: the local block list is read from storage once, at load. Seeding it after the script has booted does nothing, so this needs a fresh process — the same re…",
-      "bytes": 7330,
+      "bytes": 7369,
       "kind": "test"
     },
     {

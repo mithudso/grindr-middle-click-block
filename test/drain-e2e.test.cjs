@@ -43,7 +43,7 @@ globalThis.fetch = async (url, opts = {}) => {
   }
   if (u.includes('/api/v1/hides')) return res(200, listBody(serverHides));
 
-  const post = u.match(/\/api\/v3\/me\/blocks\/(\d+)$/);
+  const post = u.match(/\/api\/v[13]\/me\/(?:blocks|hides)\/(\d+)$/);
   if (post && method === 'POST') { serverBlocks.add(post[1]); return res(200, '{"updateTime":0}'); }
   if (post && method === 'DELETE') { serverBlocks.delete(post[1]); return res(200, ''); }
   return res(200, '{}');
@@ -128,7 +128,7 @@ test('the drain clears the backlog to zero', async () => {
 
   for (const id of NEEDS_UPGRADE) {
     assert.ok(serverBlocks.has(id), `${id} must actually be blocked server-side, not just dropped from the count`);
-    assert.ok(calls.includes(`POST /api/v3/me/blocks/${id}`), `a real POST must have been sent for ${id}`);
+    assert.ok(calls.some((c) => c.startsWith('POST ') && c.endsWith('/' + id)), `a real POST must have been sent for ${id}`);
   }
   assert.strictEqual(G.__grindrBlock_autoDrain().queued, 0, 'the queue must be empty, not merely counted down');
 });
@@ -179,8 +179,8 @@ test('a block you press jumps a large drain backlog', async () => {
     () => serverBlocks.has(PRESSED), 15_000);
   const waited = Date.now() - t0;
 
-  const idx = calls.findIndex((c) => c === `POST /api/v3/me/blocks/${PRESSED}`);
-  const bulkFirst = calls.slice(0, idx).filter((c) => c.startsWith('POST /api/v3/me/blocks/')).length;
+  const idx = calls.findIndex((c) => c.startsWith('POST ') && c.endsWith('/' + PRESSED));
+  const bulkFirst = calls.slice(0, idx).filter((c) => /^POST \/api\/v[13]\/me\/(?:blocks|hides)\//.test(c)).length;
   assert.ok(waited < 4_000,
     `the pressed block waited ${waited}ms behind ${queuedBefore} bulk jobs — it must not queue behind the drain`);
   assert.ok(bulkFirst <= 1,
@@ -212,7 +212,7 @@ test('a 429 provoked by drain traffic does not freeze a pressed block', async ()
   const realFetch = globalThis.fetch;
   globalThis.fetch = async (url, opts = {}) => {
     const u = String(url);
-    if (throttleOnce && /\/api\/v3\/me\/blocks\/5\d+$/.test(u) && (opts.method || 'GET') === 'POST') {
+    if (throttleOnce && /\/api\/v[13]\/me\/(?:blocks|hides)\/5\d+$/.test(u) && (opts.method || 'GET') === 'POST') {
       throttleOnce = false;
       calls.push(`POST ${u.replace('https://web.grindr.com', '')} -> 429`);
       return res(429, '{"error":"rate limited"}');

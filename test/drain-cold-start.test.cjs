@@ -48,7 +48,7 @@ globalThis.fetch = async (url, opts = {}) => {
     return res(200, listBody(all.slice((Number(page[1]) - 1) * PAGE_SIZE, Number(page[1]) * PAGE_SIZE)));
   }
   if (u.includes('/api/v1/hides')) return listsDown ? res(503, '') : res(200, listBody(serverHides));
-  const w = u.match(/\/api\/v3\/me\/blocks\/(\d+)$/);
+  const w = u.match(/\/api\/v[13]\/me\/(?:blocks|hides)\/(\d+)$/);
   if (w && method === 'POST') { serverBlocks.add(w[1]); return res(200, '{"updateTime":0}'); }
   return res(200, '{}');
 };

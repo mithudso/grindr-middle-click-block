@@ -178,8 +178,22 @@ A blocked id appears in the **blocks** list and not in hides. `DELETE` on
 `/api/v3/me/blocks/{id}` returns 200 and reverses it. Note the asymmetry:
 **`DELETE /api/v1/me/hides/{id}` returns 501** — there is no un-hide via that verb.
 
-Grindr's own card menu fires the *hide*, which is why copying it produced blocks
-that never removed anyone from the feed.
+Grindr's own card menu fires the *hide*. Captured verbatim from the app's own
+traffic on 2026-08-30, while the operator used Grindr's UI:
+
+```
+POST https://web.grindr.com/api/v1/me/hides/{id}      → 200 {"updateTime":0}
+```
+
+**This is the write that actually removes someone.** Confirmed by the operator:
+"no blocking mechanism sticks except for theirs."
+
+`POST /api/v3/me/blocks/{id}` also answers `200 {"updateTime":0}` and does
+populate the blocks list — a paginated walk reads 1656 entries — but the profile
+stays in the feed. They are different relationships, and only the hide is the one
+the app performs. v0.45 switched to `/blocks` on the theory that hides did not
+stick; v0.62.0 reverses that, because the app's own action is the hide and it
+does. **Copy the app. Do not infer which endpoint "should" be right.**
 
 Hide and block are **mutually exclusive states**. Firing a block after a successful
 hide silently undoes it.

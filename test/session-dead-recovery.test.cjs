@@ -38,7 +38,7 @@ globalThis.fetch = async (url, opts = {}) => {
   const p = u.match(/\/api\/v4\/blocks\?page=(\d+)/);
   if (p) return res(200, listBody([...serverBlocks].slice((+p[1] - 1) * 100, +p[1] * 100)));
   if (u.includes('/api/v1/hides')) return res(200, listBody(serverHides));
-  const w = u.match(/\/api\/v3\/me\/blocks\/(\d+)$/);
+  const w = u.match(/\/api\/v[13]\/me\/(?:blocks|hides)\/(\d+)$/);
   if (w && m === 'POST') {
     if (rejectWrites) return res(401, '');
     serverBlocks.add(w[1]);
