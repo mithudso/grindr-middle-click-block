@@ -153,6 +153,18 @@ plus `country-code` and `l-locale` — **omitting the latter two returns 501**.
 | `GET /api/v4/blocks?page=1` | `{"blocks":[{profileId,displayName,mediaHash}]}` — 94 entries |
 | `POST /api/v3/me/blocks/{id}` | block collection; only as a fallback when hide fails |
 
+**Grindr's own hide button calls the same endpoint we do** — `POST /api/v1/me/hides/{id}`.
+Confirmed by capturing the app's own click. There is no secret block call.
+
+**A 200 here really does apply.** Verified by POSTing two hides and then asking
+`/api/v1/hides`: both came back in the list. If a block "doesn't take", the API is
+not the reason.
+
+**But the cascade keeps serving hidden profiles.** Grindr's own client filters them
+out locally; the server does not. So a hide is invisible until the client removes
+the card. Any tool doing this must hide the card itself — immediately, not on a
+timer — or the block looks like it failed.
+
 Hide and block are **mutually exclusive states**. Firing a block after a successful
 hide silently undoes it.
 
