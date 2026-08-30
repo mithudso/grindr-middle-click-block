@@ -1,0 +1,12 @@
+{
+  "name": "grindr-middle-click-block",
+  "version": "0.49.0",
+  "private": true,
+  "description": "Userscript for web.grindr.com: block/hide, canned greetings, album unlock, keyboard navigation, and an on-screen HUD with diagnostics.",
+  "scripts": {
+    "check": "node --check 'Grindr Middle-Click Block.user.js'",
+    "test": "node --test --test-force-exit 'test/*.test.cjs'",
+    "verify": "npm run check && npm test"
+  },
+  "license": "MIT"
+}

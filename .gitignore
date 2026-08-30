@@ -2,7 +2,7 @@
 logs/
 tmp/
 .remember/
+notes/
 *.original.md
-
-# Per-version snapshots are history now — git tracks the working file.
 *-0.*.txt
+node_modules/

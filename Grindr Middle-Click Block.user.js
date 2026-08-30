@@ -404,10 +404,13 @@
   // the defaults below.
   const KEYBIND_STORAGE_KEY = 'grindrMiddleClickKeys_v1';
   let keyOverrides = {};
+  // Restore user key rebindings from localStorage into keyOverrides.
   function loadKeyOverrides() {
     const o = readJson(KEYBIND_STORAGE_KEY, {}, 'key overrides');
     keyOverrides = (o && typeof o === 'object' && !Array.isArray(o)) ? o : {};
   }
+  // Bind `action` ('greet'|'album'|'block'|'hide'|'prev'|'next') to `key`,
+  // persist it, and redraw the HUD. Returns true.
   function setKeyBinding(action, key) {
     if (!action || !key) return false;
     keyOverrides[action] = [String(key)];
@@ -417,6 +420,7 @@
     refreshHud();
     return true;
   }
+  // Drop every rebinding so the built-in defaults apply again.
   function clearKeyBindings() {
     keyOverrides = {};
     writeJson(KEYBIND_STORAGE_KEY, keyOverrides, 'key overrides');
@@ -653,8 +657,12 @@
   let diagStartedAt = 0;
   // Merged, time-ordered view — what the report and the entry count use.
   function diagAll() { return diagTrace.concat(diagSignal).sort((a, b) => a.t - b.t); }
+  // Total entries held by the recorder across both rings.
   function diagCount() { return diagTrace.length + diagSignal.length; }
+  // Empty every recorder buffer and counter.
   function diagReset() { diagTrace = []; diagSignal = []; diagNet = []; diagNoisyCount = 0; diagNoisySkipped = 0; diagClicks = 0; }
+  // Offer a log line to the recorder. Trace goes in a ring that signal cannot be
+  // evicted by; known floods are sampled.
   function diagPush(level, args) {
     if (!diagRecording) return;
     let msg;
@@ -697,6 +705,8 @@
   const DIAG_MAX_NET = 400;
   const DIAG_MAX_BODY = 20_000;      // per body, to keep the file openable
   let diagNet = [];
+  // Begin recording one request. Returns a record to hand to diagNetFinish, or
+  // null when not recording.
   function diagNetStart(method, url) {
     if (!diagRecording) return null;
     const rec = { method: String(method || 'GET').toUpperCase(), url: String(url || ''), started: Date.now(), reqBody: '', status: 0, statusText: '', resBody: '', mime: '', ms: 0 };
@@ -704,6 +714,7 @@
     if (diagNet.length > DIAG_MAX_NET) diagNet.shift();
     return rec;
   }
+  // Complete a request record with status, timing and body.
   function diagNetFinish(rec, res, resBody) {
     if (!rec) return;
     rec.ms = Date.now() - rec.started;
@@ -714,6 +725,7 @@
     } catch (_e) {}
     if (typeof resBody === 'string') rec.resBody = resBody.slice(0, DIAG_MAX_BODY);
   }
+  // Convert one internal request record to a HAR 1.2 entry.
   function harEntry(r) {
     return {
       startedDateTime: new Date(r.started).toISOString(),
@@ -733,6 +745,7 @@
       cache: {}, timings: { send: 0, wait: r.ms, receive: 0 },
     };
   }
+  // Build a complete HAR 1.2 document from everything captured this recording.
   function buildHar() {
     return {
       log: {
@@ -743,9 +756,15 @@
     };
   }
 
+  // Log an error. Always offered to the diagnostic recorder first, then gated by
+  // LOG_LEVEL.
   function logError(...a) { diagPush('error', a); if (logEnabled('error')) console.error(...a); }
+  // Log a warning. Recorded before the verbosity gate.
   function logWarn(...a)  { diagPush('warn', a);  if (logEnabled('warn'))  console.warn(...a); }
+  // Log an informational line. Recorded before the verbosity gate.
   function logInfo(...a)  { diagPush('info', a);  if (logEnabled('info'))  console.log(...a); }
+  // Log trace detail. Recorded before the verbosity gate, so a recording
+  // captures trace without the console being flooded.
   function logTrace(...a) { diagPush('trace', a); if (logEnabled('trace')) console.debug(...a); }
 
   // ── Persistent local block list ───────────────────────────────────────────
@@ -806,6 +825,7 @@
     if (restamped || expired.length) saveHiddenList();
     return dropped;
   }
+  // Restore the persistent local hide list (id -> hiddenAt) from localStorage.
   function loadHiddenList() {
     try {
       const raw = localStorage.getItem(HIDELIST_STORAGE_KEY);
@@ -825,6 +845,8 @@
   // the in-memory Map and storage silently diverged and the hide vanished on
   // reload while the user had been told it would persist.
   function saveHiddenList() { return writeJson(HIDELIST_STORAGE_KEY, Object.fromEntries(hiddenProfileIds), 'saveHiddenList'); }
+  // Add a profile to the local hide list. Returns whether the write actually
+  // persisted.
   function addToHiddenList(profileId) {
     const id = String(profileId || '');
     if (!id || hiddenProfileIds.has(id)) return false;
@@ -833,6 +855,7 @@
     logTrace(`${LOG} hide list + ${id} (${hiddenProfileIds.size} total, persisted=${persisted})`);
     return persisted;
   }
+  // Drop a profile from the local hide list. Returns true if it was there.
   function removeFromHiddenList(profileId) {
     const id = String(profileId || '');
     if (!hiddenProfileIds.delete(id)) return false;
@@ -887,6 +910,8 @@
       return JSON.parse(raw);
     } catch (e) { logWarn(`${LOG} ${label || key} read failed:`, e); return fallback; }
   }
+  // JSON-encode and store a value. Returns whether the write landed, which
+  // callers need before promising durability.
   function writeJson(key, value, label) {
     try { localStorage.setItem(key, JSON.stringify(value)); return true; }
     catch (e) { logWarn(`${LOG} ${label || key} write failed:`, e); return false; }
@@ -900,6 +925,7 @@
   // deliberately conservative: guessing wrong here means we stop enforcing a block
   // that never actually landed.
   const BLOCK_CONFIRM_QUIET_MS = 60 * 60_000;
+  // Restore the set of blocks Grindr has confirmed.
   function loadConfirmedBlocks() {
     try {
       const raw = localStorage.getItem(BLOCK_CONFIRMED_STORAGE_KEY);
@@ -908,6 +934,7 @@
       if (Array.isArray(arr)) for (const id of arr) { if (id != null) blockConfirmedIds.add(String(id)); }
     } catch (e) { logWarn(`${LOG} loadConfirmedBlocks failed:`, e); }
   }
+  // Persist the confirmed-block set.
   function saveConfirmedBlocks() { return writeJson(BLOCK_CONFIRMED_STORAGE_KEY, [...blockConfirmedIds], 'saveConfirmedBlocks'); }
   // ── Authoritative confirmation: ask Grindr who it thinks is hidden/blocked ──
   // Far better than inferring propagation from silence. A HAR of a real block
@@ -963,6 +990,7 @@
   const DRAIN_QUEUE_LOW_WATER = 5;    // top up once the queue gets this short
   let autoDrain = false;
   let drainTimer = 0;
+  // Start or stop the background hide-to-block drain and persist the choice.
   function setAutoDrain(on) {
     autoDrain = !!on;
     writeJson(DRAIN_STORAGE_KEY, { on: autoDrain }, 'auto-drain');
@@ -971,6 +999,8 @@
     refreshHud();
     return autoDrain;
   }
+  // One drain step: top the block queue up if it has run low and work remains.
+  // Paced by the queue's own limits.
   async function drainTick() {
     if (!autoDrain || SCRIPT_DISABLED) return;
     if (blockQueue.length > DRAIN_QUEUE_LOW_WATER) return;   // still working through the last batch
@@ -987,6 +1017,7 @@
     }
     upgradeHidesToBlocks(UPGRADE_BATCH);
   }
+  // Restore the drain flag and start its timer.
   function installAutoDrain() {
     const o = readJson(DRAIN_STORAGE_KEY, null, 'auto-drain');
     autoDrain = !!(o && o.on);
@@ -995,6 +1026,8 @@
     if (autoDrain) logInfo(`${LOG} hide→block auto-drain resumed from a previous session.`);
   }
 
+  // Queue up to `limit` hide-only entries for re-issue as real blocks. Returns
+  // how many were queued.
   function upgradeHidesToBlocks(limit) {
     const todo = hidesNeedingUpgrade().slice(0, Math.max(1, limit || UPGRADE_BATCH));
     if (!todo.length) { showToast('Nothing to upgrade — every entry is already a real block', 'ok'); return 0; }
@@ -1109,6 +1142,9 @@
   // one of those lists means the block LANDED — the exact opposite of appearing
   // in a cascade — so demotion must not fire for it.
   let indexingListResponse = false;
+  // Grindr sent us this profile, so any confirmed block on it has not
+  // propagated. Demote it back to pending. Ignored while walking a hides/blocks
+  // list.
   function noteProfileSeenInPayload(profileId) {
     // THE BUG THIS GUARD FIXES: Grindr fetches /api/v1/hides on every page load,
     // the response observer walked it, and indexProfileFromPayload called this
@@ -1160,6 +1196,7 @@
   const REBLOCK_MIN_INTERVAL_MS = 60_000;
   const ENFORCE_DEBOUNCE_MS = 300;
   const BLOCKLIST_SWEEP_MS = 3000;
+  // Restore the persistent local block list.
   function loadBlockList() {
     try {
       const raw = localStorage.getItem(BLOCKLIST_STORAGE_KEY);
@@ -1168,7 +1205,9 @@
       if (Array.isArray(arr)) for (const id of arr) { if (id != null) blockedProfileIds.add(String(id)); }
     } catch (e) { logWarn(`${LOG} loadBlockList failed:`, e); }
   }
+  // Persist the local block list.
   function saveBlockList() { return writeJson(BLOCKLIST_STORAGE_KEY, [...blockedProfileIds], 'saveBlockList'); }
+  // Record a profile as blocked locally. Returns true if newly added.
   function addToLocalBlockList(profileId) {
     const id = String(profileId || '');
     if (!id || blockedProfileIds.has(id)) return false;
@@ -1177,6 +1216,7 @@
     logTrace(`${LOG} block list + ${id} (${blockedProfileIds.size} total)`);
     return true;
   }
+  // Drop a profile from every local block structure.
   function removeFromLocalBlockList(profileId) {
     const id = String(profileId || '');
     if (!blockedProfileIds.delete(id)) return false;
@@ -1243,6 +1283,8 @@
   const OVERLAY_CHECK_THROTTLE_MS = 250;
   let overlayCheckedAt = 0;
   let overlayCheckedVal = false;
+  // True when a Grindr modal/drawer/picker is up. Throttled; the sweep and
+  // keep-alive stand down while it is.
   function grindrOverlayOpen() {
     const now = Date.now();
     if (now - overlayCheckedAt < OVERLAY_CHECK_THROTTLE_MS) return overlayCheckedVal;
@@ -1395,6 +1437,8 @@
   // genuine data; the length floor also rejects 'undefined' (9) and 'null' (4).
   const isUsableHash = (h) => typeof h === 'string' && h.length >= 10 && /^[A-Za-z0-9._-]+$/.test(h);
 
+  // Index one profile object from Grindr's traffic: photo hashes, text filter,
+  // block-tier demotion.
   function indexProfileFromPayload(obj) {
     if (!obj || typeof obj !== 'object') return;
     const pid = String(obj.profileId || obj.profileID || '');
@@ -1461,6 +1505,7 @@
   // indexed. These limits trade a little completeness for a guarantee that a
   // payload can't blow the stack or stall the main thread.
   const ARRAY_SAMPLE_CAP = 2000;
+  // Recursively index a JSON payload. Bounded by depth and ARRAY_SAMPLE_CAP.
   function walkAndIndex(value, depth) {
     if (!value || typeof value !== 'object' || depth > 5) return;
     // Trace the top-level entry only — this function recurses across every node
@@ -1516,6 +1561,7 @@
       scheduleEnforce();
     } catch (_e) {}
   }
+  // Treat a message object as engagement from its sender.
   function noteIncomingMessage(obj) {
     unhideForEngagement(obj.senderId, Number(obj.timestamp || 0), 'they messaged you');
   }
@@ -1558,6 +1604,8 @@
     } catch (_e) {}
   }
 
+  // Recursively scan a payload for messages and reactions that should unhide
+  // someone. `live` marks a WebSocket frame.
   function noteIncomingMessages(value, depth, live) {
     if (!UNHIDE_ON_MESSAGE || !hiddenProfileIds.size) return;
     if (!value || typeof value !== 'object' || (depth || 0) > MESSAGE_SCAN_MAX_DEPTH) return;
@@ -1622,6 +1670,8 @@
   // an unrelated url that merely contains 'unblockable' does not.
   const BLOCK_ACTION_URL_RE = /(?:^|\/)(blocks?|hides?|reports?|mute|ban)(?:\/|\?|#|$)/i;
   const seenBlockActions = [];           // ring buffer of {method,url,body,at}
+  // Record a block/hide-shaped request Grindr itself made, for endpoint
+  // discovery.
   function notePossibleBlockAction(method, url, body) {
     try {
       const u = String(url || '');
@@ -1659,6 +1709,7 @@
       return h === 'grindr.com' || h.endsWith('.grindr.com');
     } catch (_e) { return false; }
   }
+  // Record any mutating Grindr request while a capture window is armed.
   function noteWriteDuringCapture(method, url, body) {
     try {
       if (Date.now() > captureWritesUntil) return;
@@ -1809,6 +1860,8 @@
       return true;
     } catch (e) { logTrace(`${LOG} skip-beta-dialog: dismiss failed:`, e); return false; }
   }
+  // Pre-seed the beta-dialog dismissal flag and watch for the dialog mounting
+  // anyway.
   function installBetaDialogSkip() {
     if (!SKIP_BETA_DIALOG) return;
     // 1) Pre-seed the gate flag now, before the bundle reads it on mount.
@@ -1981,6 +2034,8 @@
   // log line and never contradicts a toast the user already saw.
   const GREET_FRAME_WATCH_MS = 4000;
   let greetFrameWatch = null;
+  // After submitting a greeting, watch outbound WebSocket frames for its text to
+  // confirm it left the browser.
   function watchForGreetFrame(phrase, profileId) {
     const needle = String(phrase || '').trim();
     if (!needle) return;
@@ -1992,6 +2047,7 @@
       greetFrameWatch = null;
     }, GREET_FRAME_WATCH_MS + 250);
   }
+  // Check one outbound frame against the greeting being watched for.
   function noteWsSendForGreet(data) {
     try {
       const w = greetFrameWatch;
@@ -2154,6 +2210,8 @@
     return best;
   }
 
+  // Resolve the grid card owning a profile photo. Selector first, then a
+  // strictly bounded geometry walk. Returns null rather than guessing.
   function cardForImage(img) {
     if (!img) return null;
     // The selector path is the ONLY reliable one, and it does still work: a live
@@ -2335,6 +2393,8 @@
     }
   }
 
+  // Send a hide, falling back to the block collection only if the hide fails.
+  // Returns {ok,status,sessionDead,calls}.
   async function attemptHideOrBlock(profileId, auth, method) {
     const headers = { 'Content-Type': 'application/json', ...auth };
     const label = method === 'DELETE' ? 'Unblock' : 'Block';
@@ -2467,6 +2527,8 @@
   // belt-and-suspenders so a slipped-through bad id can't spin the queue.)
   const PERMANENT_REJECT_STATUSES = new Set([400, 422]);
   let endpointWrongWarned = false;
+  // Warn once that an endpoint answered 404/405/501, and stop retrying that
+  // route.
   function warnEndpointWrong(status) {
     if (endpointWrongWarned) { logWarn(`${LOG} Block endpoint still ${status} — skipping (run __grindrBlock_seenActions() to find the real one).`); return; }
     endpointWrongWarned = true;
@@ -2723,6 +2785,8 @@
     return 'next';
   }
 
+  // Drain the rate-limited block/unblock queue. Honours backoff, the hourly cap,
+  // the session-dead pause and in-flight aborts.
   async function processQueue() {
     logTrace(`${LOG} processQueue`);
     if (queueProcessing) return;
@@ -2948,6 +3012,8 @@
   // real ≥11-digit id, not a scraped tracking token.)
   const MIN_PROFILE_ID_LEN = 5;
   const MAX_PROFILE_ID_LEN = 10;
+  // True for a 5-10 digit numeric string. The gate every profile id must pass
+  // before it reaches the API.
   function isPlausibleProfileId(id) {
     return typeof id === 'string'
       && /^\d+$/.test(id)
@@ -3086,15 +3152,19 @@
   const LAST_BLOCK_STORAGE_KEY = 'grindrMiddleClickLastBlock_v1';
   let lastBlockedProfileId = '';
   let lastBlockedAt = 0;
+  // Restore the most recently blocked id so the HUD can still undo it after a
+  // reload.
   function loadLastBlocked() {
     const o = readJson(LAST_BLOCK_STORAGE_KEY, null, 'last block');
     if (o && isPlausibleProfileId(String(o.id || ''))) { lastBlockedProfileId = String(o.id); lastBlockedAt = Number(o.at) || 0; }
   }
+  // Remember and persist the most recently blocked id.
   function noteLastBlocked(id) {
     lastBlockedProfileId = String(id || '');
     lastBlockedAt = Date.now();
     writeJson(LAST_BLOCK_STORAGE_KEY, { id: lastBlockedProfileId, at: lastBlockedAt }, 'last block');
   }
+  // Forget the most recently blocked id.
   function clearLastBlocked() {
     lastBlockedProfileId = '';
     lastBlockedAt = 0;
@@ -3267,6 +3337,8 @@
     };
   }
 
+  // Show the 30-second Undo toast for a block, with the profile's name and photo
+  // when known.
   function offerUnblock(profileId, profileEl, prevStyle, meta) {
     logTrace(`${LOG} offerUnblock(${profileId})`);
     // One live offer per profile — replace any existing toast/timer.
@@ -3312,6 +3384,8 @@
     recentlyBlocked.set(profileId, { profileEl, prevStyle, toast, expireTimer });
   }
 
+  // The shared entry point for every block gesture: dim, record locally, index
+  // hashes, queue the block, hide the card, offer Undo.
   function startBlock(profileId, profileEl) {
     logTrace(`${LOG} startBlock(${profileId})`);
     // If this profile is already inside its undo window it's already dimmed and
@@ -3423,6 +3497,8 @@
     if (reappearedVisible) maybeReblock(profileId);
   }
 
+  // One sweep over rendered tiles, collapsing any that belong to a blocked or
+  // hidden profile. O(images), not O(list).
   function enforceAllBlocked() {
     if (SCRIPT_DISABLED) return;
     // Age out expired hides before enforcing, so a hide that just passed its
@@ -3631,6 +3707,8 @@
   // The floating chat drawer, identified by controls only it has. Bounded to a few
   // ancestors so this cannot match a container common to the whole page.
   const CHAT_DRAWER_MARKERS = '[aria-label="close drawer" i], [aria-label="Open chat list" i], [data-testid^="chat-button"]';
+  // True when an element sits inside the floating chat drawer, identified by
+  // controls only it has.
   function isInsideChatDrawer(el) {
     try {
       let node = el && el.parentElement;
@@ -3641,6 +3719,8 @@
     return false;
   }
 
+  // Pick the message box. Scores candidates, refuses search fields, and skips
+  // the chat drawer when it holds someone else.
   function findChatComposer() {
     const candidates = Array.from(
       document.querySelectorAll("textarea, input[type='text'], [contenteditable='true'], [contenteditable='']")
@@ -3725,11 +3805,14 @@
   // leaving you with nothing to send.
   const GREETINGS_STORAGE_KEY = 'grindrMiddleClickGreetings_v1';
   let greetingsOverride = null;
+  // Restore a user-edited greeting list, if any.
   function loadGreetings() {
     const a = readJson(GREETINGS_STORAGE_KEY, null, 'greetings');
     greetingsOverride = (Array.isArray(a) && a.length) ? a.map(String) : null;
   }
+  // The greeting list in force: the user's if set, otherwise the built-in one.
   function activeGreetings() { return greetingsOverride || GREETINGS; }
+  // Replace the greeting list. An empty list restores the built-in one.
   function setGreetings(list) {
     const clean = (Array.isArray(list) ? list : String(list || '').split('\n'))
       .map((x) => String(x || '').trim()).filter(Boolean);
@@ -3741,6 +3824,8 @@
   }
   loadGreetings();
 
+  // Choose a greeting at random, avoiding an immediate repeat, with time tokens
+  // resolved.
   function pickGreeting() {
     const pool = activeGreetings().map((s) => String(s || '').trim()).filter(Boolean);
     if (!pool.length) return '';
@@ -3868,6 +3953,8 @@
     return (after[0] || candidates[0]);
   }
 
+  // Click the composer's send button. Returns whether one was found and clicked,
+  // NOT whether anything sent.
   function clickSendButton(inputEl) {
     const btn = findSendButton(inputEl);
     if (!btn) return false;
@@ -3915,6 +4002,8 @@
   // GREET_PENDING_MAX_AGE_MS) are pruned on load so a greeting queued in a long-
   // closed session never fires later.
   const pendingGreets = Object.create(null);   // profileId -> { phrase, ts }
+  // Restore queued greetings, discarding any older than
+  // GREET_PENDING_MAX_AGE_MS.
   function loadPendingGreets() {
     try {
       const raw = localStorage.getItem(PENDING_GREET_STORAGE_KEY);
@@ -3931,10 +4020,12 @@
       }
     } catch (e) { logWarn(`${LOG} loadPendingGreets failed:`, e); }
   }
+  // Persist the queued-greeting map.
   function savePendingGreets() {
     try { localStorage.setItem(PENDING_GREET_STORAGE_KEY, JSON.stringify(pendingGreets)); }
     catch (e) { logWarn(`${LOG} savePendingGreets failed:`, e); }
   }
+  // Queue a greeting for a profile whose chat is about to open.
   function queuePendingGreet(profileId, phrase) {
     const id = String(profileId || '');
     const text = String(phrase || '').trim();
@@ -3944,10 +4035,12 @@
     savePendingGreets();
     return row;
   }
+  // Read a queued greeting without consuming it.
   function readPendingGreet(profileId) {
     const row = pendingGreets[String(profileId || '')];
     return (row && typeof row.phrase === 'string') ? row : null;
   }
+  // Read and remove a queued greeting.
   function consumePendingGreet(profileId) {
     const id = String(profileId || '');
     const row = readPendingGreet(id);
@@ -3981,6 +4074,8 @@
   // navigation when the popup is blocked. Cooldown-guarded so an accidental double
   // shift+right-click can't open two tabs.
   let lastGreetOpenAt = 0;
+  // GREET_MODE='newtab' only: open the chat in a new tab. Documented logout
+  // risk; boots a second app instance.
   function openGreetChat(profileId) {
     const id = String(profileId || '');
     if (!isPlausibleProfileId(id)) return false;
@@ -4053,6 +4148,8 @@
   // silently expired while a profile sat open, which is how chatPeerIdFromPath
   // came back null with a perfectly good conversation observed.
   const OPEN_CONVERSATION_MAX_AGE_MS = 10 * 60_000;
+  // Record which conversation Grindr currently has open, learned from its own
+  // traffic.
   function noteOpenConversation(a, b) {
     const x = String(a || '');
     const y = String(b || '');
@@ -4061,6 +4158,8 @@
     if (openConversation.id !== id) logTrace(`${LOG} open conversation: ${id}`);
     openConversation = { id, a: x, b: y, at: Date.now() };
   }
+  // Extract a conversationId from a request body (the typing indicator carries
+  // one).
   function noteOpenConversationFromBody(body) {
     try {
       if (typeof body !== 'string' || !body.includes('conversationId')) return;
@@ -4083,6 +4182,7 @@
     try { return new URLSearchParams(location.search).get('profile') === 'true'; }
     catch (_e) { return false; }
   }
+  // True when the photo lightbox is open (?lightbox=true).
   function isLightboxOpenFromUrl() {
     try { return new URLSearchParams(location.search).get('lightbox') === 'true'; }
     catch (_e) { return false; }
@@ -4245,6 +4345,8 @@
     '[class*="nav-" i]', '[data-testid*="nav" i]', '[data-testid*="sidebar" i]',
     '[data-testid*="tabbar" i]', '[class*="lightbox" i]',
   ].join(', ');
+  // True when an element is nav/header/sidebar/lightbox chrome, which must never
+  // be mistaken for content.
   function isAppChrome(el) {
     try { return !!(el && el.closest && el.closest(APP_CHROME_SELECTOR)); }
     catch (_e) { return false; }
@@ -4354,6 +4456,8 @@
   // a cleared box is allowed to say "Sent".
   const SEND_CONFIRM_ATTEMPTS = 8;
   const SEND_CONFIRM_INTERVAL_MS = 150;
+  // Poll until the composer is genuinely empty. An empty box is the only
+  // trustworthy proof a message sent.
   function confirmComposerCleared(composer, phrase, then) {
     let n = 0;
     const needle = String(phrase || '').trim();
@@ -4449,10 +4553,13 @@
   // Who the in-flight greet is for, so findChatComposer can reject a drawer
   // showing someone else.
   let greetTargetId = '';
+  // True while a greet flow is in progress.
   function greetFlowActive() { return !!(greetFlow && !greetFlow.done); }
   // Longest a greet flow can legitimately take: lightbox close, then the chat
   // button poll, then the composer poll, then the send confirmation, plus slack.
   const GREET_FLOW_MAX_MS = 45_000;
+  // Claim the single greet slot, cancelling any predecessor, and arm a watchdog
+  // so a throwing path cannot wedge it.
   function beginGreetFlow(id) {
     cancelGreetFlow('superseded');
     greetFlow = { id: String(id || ''), timers: [], done: false, at: Date.now() };
@@ -4470,10 +4577,12 @@
     }, GREET_FLOW_MAX_MS);
     return greetFlow;
   }
+  // Register a timer against the active flow so cancelling the flow stops it.
   function trackGreetTimer(timer) {
     if (greetFlow && !greetFlow.done && timer) greetFlow.timers.push(timer);
     return timer;
   }
+  // Release the greet slot and clear its timers.
   function endGreetFlow(flow) {
     const f = flow || greetFlow;
     if (!f || f.done) return;
@@ -4482,6 +4591,7 @@
     f.timers.length = 0;
     if (greetFlow === f) { greetFlow = null; greetTargetId = ''; }
   }
+  // Abandon the in-flight greet, e.g. on a route change.
   function cancelGreetFlow(why) {
     if (!greetFlowActive()) return false;
     logWarn(`${LOG} greet flow for ${greetFlow.id} cancelled (${why}).`);
@@ -4510,6 +4620,8 @@
     return peer !== String(id);
   }
 
+  // Greet by driving the app's own UI: refuse a contradicted target, use the
+  // profile's composer, submit, then the chosen after-action.
   function greetViaUi(profileId) {
     const id = String(profileId || '');
     if (!isPlausibleProfileId(id)) return false;
@@ -4777,6 +4889,7 @@
     } catch (_e) { return '?'; }
   }
 
+  // True when focus is in something that eats keystrokes, so hotkeys stand down.
   function isTypingTarget(el) {
     if (!el || !(el instanceof Element)) return false;
     if (el.isContentEditable) return true;
@@ -4839,6 +4952,8 @@
     hotkeyCursorPrevStyle = null;
   }
 
+  // Move the visual tile cursor to an element, optionally scrolling it into
+  // view.
   function setHotkeyCursor(el, { scroll = true } = {}) {
     if (!el) return false;
     if (el === hotkeyCursorEl) { if (scroll) scrollCursorIntoView(el); return true; }
@@ -4861,6 +4976,7 @@
     return true;
   }
 
+  // Centre the cursor's tile in the viewport.
   function scrollCursorIntoView(el) {
     try { el.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' }); }
     catch (_e) { try { el.scrollIntoView(); } catch (_e2) {} }
@@ -5171,6 +5287,7 @@
   // React keyboard code still switches on them, and an event carrying only `key`
   // silently does nothing there.
   let synthesizingKey = false;
+  // Synthesise the arrow key Grindr's own profile pager listens for.
   function dispatchArrowKey(delta, host) {
     const key = delta > 0 ? 'ArrowRight' : 'ArrowLeft';
     const code = delta > 0 ? 39 : 37;
@@ -5223,6 +5340,8 @@
     next: /(^|[^a-z])(next|forward)([^a-z]|$)/i,
     prev: /(^|[^a-z])(prev|previous)([^a-z]|$)/i,
   };
+  // Fallback when the synthetic arrow does not move the view: click the pager
+  // control, matched on whole words only.
   function clickProfilePagerButton(delta) {
     const dir = delta > 0 ? 'next' : 'prev';
     // Names may say next/forward/right; classes and testids only the unambiguous
@@ -5317,6 +5436,8 @@
   // On the grid, hover wins. On a profile/chat page the route wins, because
   // hovering the conversation list there would otherwise greet the wrong person.
   let lastViewedProfileId = '';
+  // Decide which profile the action keys act on. An open overlay resolves from
+  // Grindr's own conversation fetch first.
   function resolveTargetProfileId() {
     const fromEl = (el) => {
       if (!el || !(el instanceof Element) || !document.contains(el)) return '';
@@ -5372,6 +5493,7 @@
   // for the action keys. Opening the media picker would arm block/hide/greet on a
   // non-existent profile. Album ids are learned separately by ALBUM_SHARES_URL_RE.
   const VIEWED_PROFILE_URL_RE = /\/(?:profiles?|users?|conversations?|chat)\/(\d{5,10})(?:\/|\?|$)/i;
+  // Remember the last single profile the app fetched, as a last-resort target.
   function noteViewedProfileFromUrl(url) {
     try {
       const m = String(url || '').match(VIEWED_PROFILE_URL_RE);
@@ -5491,6 +5613,8 @@
   const albumSharesCache = new Map();   // albumId → { ids:Set<string>, at:number }
   let lastAlbumWriteAt = 0;
 
+  // Restore album state, migrating and discarding anything a removed heuristic
+  // wrote.
   function loadAlbumState() {
     try {
       const raw = localStorage.getItem(ALBUM_STORAGE_KEY);
@@ -5532,6 +5656,7 @@
       }
     } catch (e) { logWarn(`${LOG} loadAlbumState failed:`, e); }
   }
+  // Persist album state.
   function saveAlbumState() {
     try { localStorage.setItem(ALBUM_STORAGE_KEY, JSON.stringify(albumState)); }
     catch (e) { logWarn(`${LOG} saveAlbumState failed:`, e); }
@@ -5591,6 +5716,8 @@
   // half prove that half is you, with no ordering assumption at all.
   const seenConversationIds = new Set();
   const SEEN_CONVERSATION_CAP = 200;
+  // Learn your own profile id by intersection: you are the id common to two
+  // different conversations.
   function noteMyProfileIdFromConversationId(a, b) {
     if (!isPlausibleProfileId(a) || !isPlausibleProfileId(b)) return '';
     const key = `${a}:${b}`;
@@ -5615,6 +5742,7 @@
     seenConversationIds.add(key);
     return '';
   }
+  // Learn your own profile id and the open conversation from a URL.
   function noteMyProfileIdFromUrl(url) {
     try {
       const u = String(url || '');
@@ -5702,6 +5830,7 @@
     return '';
   }
 
+  // Read album ids and names off the My Albums panel.
   function scanAlbumsFromDom() {
     const out = [];
     const seen = new Set();
@@ -5758,6 +5887,8 @@
       if (v && typeof v === 'object') harvestAlbums(v, out, depth + 1);
     }
   }
+  // Probe the album list endpoints once and adopt the first that returns album
+  // objects.
   async function loadAlbumNames() {
     const auth = getCapturedAuth();
     if (!auth) { showToast('No captured auth yet — scroll the grid once', 'warn'); return null; }
@@ -5826,6 +5957,7 @@
       .map((x) => x.a);
   }
 
+  // The ordered album list the unlock hotkey walks, with retired albums removed.
   function albumRotation() {
     const named = (id) => String(albumState.names[String(id)] || '');
     if (albumState.order.length) {
@@ -5878,15 +6010,18 @@
     } catch (e) { logWarn(`${LOG} album ${id}: shares read error:`, e); return null; }
   }
 
+  // True when this album has already been shared with this profile.
   function ledgerHas(pid, albumId) {
     const list = albumState.shares[String(pid)] || [];
     return list.includes(String(albumId));
   }
+  // Record that an album was shared with a profile.
   function ledgerAdd(pid, albumId) {
     const p = String(pid);
     const list = albumState.shares[p] || (albumState.shares[p] = []);
     if (!list.includes(String(albumId))) { list.push(String(albumId)); saveAlbumState(); }
   }
+  // Forget that an album was shared with a profile.
   function ledgerDrop(pid, albumId) {
     const p = String(pid);
     const list = albumState.shares[p];
@@ -6380,6 +6515,7 @@
   const ARMED_STORAGE_KEY = 'grindrMiddleClickArmed_v1';
   let consoleArmed = false;
   try { consoleArmed = sessionStorage.getItem(ARMED_STORAGE_KEY) === '1'; } catch (_e) {}
+  // Arm or disarm the acting console functions for this tab.
   function armConsole(on) {
     consoleArmed = on !== false;
     try { if (consoleArmed) sessionStorage.setItem(ARMED_STORAGE_KEY, '1'); else sessionStorage.removeItem(ARMED_STORAGE_KEY); } catch (_e) {}
@@ -6766,10 +6902,12 @@
     hideCardOnBlock: true,
   };
   let settings = { ...SETTINGS_DEFAULTS };
+  // Restore user settings.
   function loadSettings() {
     const o = readJson(SETTINGS_STORAGE_KEY, null, 'settings');
     if (o && typeof o === 'object' && !Array.isArray(o)) settings = { ...SETTINGS_DEFAULTS, ...o };
   }
+  // Change one setting, persist it, and redraw the HUD.
   function setSetting(key, value) {
     if (!(key in SETTINGS_DEFAULTS)) return false;
     settings[key] = value;
@@ -6815,6 +6953,8 @@
   let hudEl = null;
   let hudTimer = 0;
 
+  // Snapshot of everything the HUD displays. Doubles as its re-render
+  // fingerprint.
   function hudState() {
     let target = '';
     try { target = resolveTargetProfileId() || ''; } catch (_e) {}
@@ -6855,6 +6995,7 @@
     return bits.join(' ');
   }
 
+  // Create the HUD element, restore its position, and make it draggable.
   function buildHud() {
     if (hudEl || !document.body) return;
     const wrap = document.createElement('div');
@@ -6879,6 +7020,7 @@
   // and clamped back into view on restore, so a window resize can't strand it.
   const HUD_POS_KEY = 'grindrMiddleClickHudPos_v1';
   let hudDrag = null;
+  // Let the HUD be dragged by any non-button part of itself.
   function makeHudDraggable(el) {
     el.addEventListener('mousedown', (e) => {
       // Buttons keep their normal behaviour.
@@ -6899,6 +7041,7 @@
       hudDrag = null;
     });
   }
+  // Position the HUD, clamped inside the viewport.
   function placeHud(left, top) {
     if (!hudEl) return;
     const r = hudEl.getBoundingClientRect();
@@ -6911,11 +7054,13 @@
     hudEl.style.right = 'auto';
     hudEl.style.bottom = 'auto';
   }
+  // Remember where the HUD was dragged to.
   function persistHudPosition() {
     if (!hudEl) return;
     const r = hudEl.getBoundingClientRect();
     try { localStorage.setItem(HUD_POS_KEY, JSON.stringify({ left: r.left, top: r.top })); } catch (_e) {}
   }
+  // Put the HUD back where it was left.
   function restoreHudPosition() {
     const pos = readJson(HUD_POS_KEY, null, 'hud position');
     if (pos && typeof pos.left === 'number' && typeof pos.top === 'number') placeHud(pos.left, pos.top);
@@ -6926,6 +7071,7 @@
     return 'HUD moved back to the bottom-right corner.';
   };
 
+  // One label/value row in the HUD.
   function hudRow(k, v) {
     const r = document.createElement('div');
     r.style.cssText = 'display:flex;gap:8px;justify-content:space-between;padding:1px 0';
@@ -6935,6 +7081,7 @@
     return r;
   }
 
+  // Draw the HUD for the active tab. Called only when hudState() changes.
   function renderHud() {
     if (!hudEl) return;
     hudEl.textContent = '';
@@ -7085,10 +7232,12 @@
     hudEl.append(head, keys, state, diag);
   }
 
+  // Redraw the HUD if it is open.
   function refreshHud() { try { if (hudOpen && hudEl) renderHud(); } catch (_e) {} }
   // Capture the next keydown and bind it. Uses its own one-shot listener in the
   // capture phase so it sees the key before the hotkey handler can act on it.
   let rebindPending = null;
+  // Capture the next keypress and bind it to an action.
   function beginRebind(action, row) {
     if (rebindPending) return;
     if (row.firstChild) row.firstChild.textContent = 'press a key…';
@@ -7194,12 +7343,15 @@
     return wrap;
   }
 
+  // Remember whether the HUD is open.
   function persistHud() { try { localStorage.setItem(HUD_STORAGE_KEY, hudOpen ? '1' : '0'); } catch (_e) {} }
+  // Show or hide the HUD.
   function toggleHud() { hudOpen = !hudOpen; persistHud(); renderHud(); }
 
   // Every click you make while recording, described the way the resolvers see it.
   let diagClicks = 0;
   let diagClickListener = null;
+  // Start recording clicks, with the profile id each one resolves to.
   function installDiagClickCapture() {
     if (diagClickListener) return;
     diagClickListener = (e) => {
@@ -7223,6 +7375,7 @@
   // Mirror the page's own console while recording — Grindr's errors are often the
   // real story (a 403 from its bundle explains more than anything we log).
   let diagConsolePatched = false;
+  // Mirror the page's own console.error/warn into the recording.
   function installDiagConsoleCapture() {
     if (diagConsolePatched) return;
     diagConsolePatched = true;
@@ -7242,6 +7395,7 @@
     }
   }
 
+  // Begin a diagnostic recording.
   function startDiagRecording() {
     diagReset();
     installDiagClickCapture();
@@ -7252,6 +7406,7 @@
     logInfo(`${LOG} diagnostic recording STARTED — reproduce the problem, then press save.`);
     showToast('Recording diagnostics — reproduce the problem, then Save', 'ok');
   }
+  // End the recording.
   function stopDiagRecording() {
     if (!diagRecording) return;
     diagEvent('recording-stopped', { entries: diagCount() });
@@ -7371,6 +7526,7 @@
   window.__grindrBlock_setKey = function (action, key) { return setKeyBinding(action, key); };
   window.__grindrBlock_resetKeys = function () { return clearKeyBindings(); };
 
+  // Mount the HUD and start its refresh timer.
   function installHud() {
     try { hudOpen = localStorage.getItem(HUD_STORAGE_KEY) === '1'; } catch (_e) {}
     const boot = () => { buildHud(); };
