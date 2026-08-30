@@ -13,13 +13,15 @@ test('createClient wires auth into the api modules', () => {
   assert.strictEqual(typeof g.dom.resolveCascadeTile, 'function');
   assert.strictEqual(typeof g.compose.findComposer, 'function');
   assert.strictEqual(typeof g.reconcile.idsFromListPayload, 'function');
-  assert.strictEqual(typeof g.limiter, 'function');
+  assert.strictEqual(typeof g.limiterFactory, 'function');   // a factory, not an instance
+  assert.strictEqual(typeof g.destroy, 'function');
   assert.ok(g.auth.isReady());
 });
-test('observe:true installs an observer that fills auth', () => {
+test('observe:true installs an observer that fills auth; destroy() removes it', () => {
   const g = G.createClient({ observe: true });
   assert.ok(g.observer && typeof g.observer.uninstall === 'function');
-  g.observer.uninstall();
+  g.destroy();
+  assert.strictEqual(g.observer, null);
 });
 test('VERSION is exported', () => {
   assert.match(G.VERSION, /^\d+\.\d+\.\d+$/);
