@@ -375,6 +375,11 @@
   // them from the hide list so a later message can't resurface a profile you have
   // since blocked outright.
   const HOTKEYS_ENABLED = true;
+  // Touch device? The desktop gestures (middle-click, shift-click, hover tracking,
+  // hardware keys) do not exist on touch, so mobile relies on the on-screen HUD
+  // action buttons and the opt-in long-press. Detected once at load.
+  const IS_TOUCH = (typeof navigator !== 'undefined' && (navigator.maxTouchPoints || 0) > 0)
+    || (typeof window !== 'undefined' && 'ontouchstart' in window);
   // event.key values. All six are compared case-insensitively.
   //   Insert → greet    Delete → unlock album
   //   Home   → block    End    → hide
@@ -6295,6 +6300,74 @@
   document.addEventListener('mousedown', onBlockClick, true);
   document.addEventListener('auxclick', onBlockClick, true);
 
+  // ── Touch: long-press a tile to block ──────────────────────────────────────
+  // The touch equivalent of a middle-click. Opt-in (settings.longPressBlock, off
+  // by default) because a long press during a scroll could misfire. A press is a
+  // block only if the finger stays roughly still for LONG_PRESS_MS; any real drag
+  // (a scroll) or an early lift cancels it. On fire it reuses the exact click→block
+  // path via a synthetic event, so resolveProfileIdFromClick's full URL/DOM/hash/
+  // fiber strategy runs on the touched element with no new selectors.
+  const LONG_PRESS_MS = 500;
+  const LONG_PRESS_MOVE_CANCEL_PX = 12;
+  let longPressTimer = 0;
+  let longPressStart = null;
+  // Cancel any pending long-press (movement, lift, or multi-touch).
+  function clearLongPress() {
+    if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = 0; }
+    longPressStart = null;
+  }
+  // Arm the long-press-to-block timer on a single-finger press over a tile.
+  function onTouchStartBlock(e) {
+    if (SCRIPT_DISABLED || !settings.longPressBlock) return;
+    if (!e.touches || e.touches.length !== 1) { clearLongPress(); return; }   // ignore pinch/multi-touch
+    const t = e.touches[0];
+    const el = e.target;
+    if (isOwnGreetUi(el)) return;   // our own HUD/toasts
+    longPressStart = { x: t.clientX, y: t.clientY, el };
+    clearTimeout(longPressTimer);
+    longPressTimer = setTimeout(() => {
+      longPressTimer = 0;
+      const start = longPressStart;
+      longPressStart = null;
+      if (!start) return;
+      const synthetic = { target: start.el, __touch: true, preventDefault() {}, stopPropagation() {}, stopImmediatePropagation() {} };
+      let acted = false;
+      try { acted = attemptBlock(synthetic); } catch (err) { logWarn(`${LOG} long-press block failed:`, err); }
+      if (acted) { try { if (navigator.vibrate) navigator.vibrate(30); } catch (_e) {} }
+      else showToast('Long-press: no profile resolved here', 'warn');
+    }, LONG_PRESS_MS);
+  }
+  // Cancel the long-press if the finger moves far enough to be a scroll.
+  function onTouchMoveBlock(e) {
+    if (!longPressStart) return;
+    const t = e.touches && e.touches[0];
+    if (!t) { clearLongPress(); return; }
+    if (Math.abs(t.clientX - longPressStart.x) > LONG_PRESS_MOVE_CANCEL_PX
+      || Math.abs(t.clientY - longPressStart.y) > LONG_PRESS_MOVE_CANCEL_PX) clearLongPress();  // it's a scroll
+  }
+  // Passive: never block the page's own scrolling or tap-to-open.
+  document.addEventListener('touchstart', onTouchStartBlock, { capture: true, passive: true });
+  document.addEventListener('touchmove', onTouchMoveBlock, { capture: true, passive: true });
+  document.addEventListener('touchend', clearLongPress, { capture: true, passive: true });
+  document.addEventListener('touchcancel', clearLongPress, { capture: true, passive: true });
+  let longPressStyleEl = null;
+  // iOS Safari pops a save/share callout on a long-press over an image, which would
+  // fight the block gesture. Suppress it on profile photos ONLY while long-press is
+  // enabled (and remove the style when it's turned back off).
+  function syncLongPressStyle() {
+    const want = IS_TOUCH && settings.longPressBlock;
+    if (want && !longPressStyleEl) {
+      longPressStyleEl = document.createElement('style');
+      longPressStyleEl.id = 'grindr-block-longpress-style';
+      longPressStyleEl.textContent = `${PROFILE_PHOTO_SELECTOR}{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}`;
+      (document.head || document.documentElement).appendChild(longPressStyleEl);
+    } else if (!want && longPressStyleEl) {
+      try { longPressStyleEl.remove(); } catch (_e) {}
+      longPressStyleEl = null;
+    }
+  }
+  syncLongPressStyle();
+
   // Shift+left-click block gesture — detected on `click`, NOT `mousedown`.
   // v0.16.0 detected it at mousedown (button:0 + shiftKey), but a macOS trackpad
   // secondary click (two-finger tap / Force Touch right-click) can report
@@ -7017,6 +7090,10 @@
     // Collapse the blocked profile's card immediately rather than waiting for
     // the enforcement sweep.
     hideCardOnBlock: true,
+    // Touch only: long-press a profile tile to block it (the touch equivalent of a
+    // middle-click). Off by default because a long press during a scroll can
+    // misfire; enable it in the HUD settings tab.
+    longPressBlock: false,
   };
   // The allowed value set for each setting. Storage and the console API are both
   // untrusted inputs — a corrupted afterBlock falls through applyAfterAction's
@@ -7025,6 +7102,7 @@
     afterGreet: ['advance', 'chat', 'stay', 'grid'],
     afterBlock: ['advance', 'stay', 'grid'],
     hideCardOnBlock: [true, false],
+    longPressBlock: [true, false],
   };
   let settings = { ...SETTINGS_DEFAULTS };
   // Restore user settings — copy only keys whose stored value is a known option.
@@ -7044,6 +7122,7 @@
     settings[key] = value;
     writeJson(SETTINGS_STORAGE_KEY, settings, 'settings');
     logInfo(`${LOG} setting ${key} = ${value}`);
+    if (key === 'longPressBlock') { try { syncLongPressStyle(); } catch (_e) {} }
     refreshHud();
     return true;
   }
@@ -7132,12 +7211,21 @@
     const wrap = document.createElement('div');
     wrap.id = HUD_ID;
     wrap.style.cssText = [
-      'position:fixed', 'right:12px', 'bottom:12px', 'z-index:2147483600',
+      'position:fixed', 'right:12px', 'z-index:2147483600',
       'font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace',
       'color:#e8e8e8', 'background:rgba(18,18,20,.94)', 'border:1px solid #3a3a40',
       'border-radius:10px', 'box-shadow:0 6px 24px rgba(0,0,0,.45)',
-      'max-width:340px', 'user-select:none', 'cursor:move',
-    ].join(';');
+      'user-select:none', '-webkit-user-select:none', 'cursor:move',
+      // On touch the fixed 340px panel is too wide for a phone and bottom:12px
+      // sits under Grindr's bottom nav bar; lift it clear (respecting the iOS home
+      // indicator via safe-area-inset), fit the viewport, and cap the height so the
+      // action buttons and tabs stay reachable with an internal scroll.
+      IS_TOUCH ? 'bottom:calc(env(safe-area-inset-bottom,0px) + 72px)' : 'bottom:12px',
+      IS_TOUCH ? 'max-width:min(340px,92vw)' : 'max-width:340px',
+      IS_TOUCH ? 'max-height:68vh' : 'max-height:none',
+      IS_TOUCH ? 'overflow-y:auto' : '',
+      IS_TOUCH ? '-webkit-overflow-scrolling:touch' : '',
+    ].filter(Boolean).join(';');
     document.body.appendChild(wrap);
     hudEl = wrap;
     restoreHudPosition();
@@ -7153,12 +7241,15 @@
   let hudDrag = null;
   // Let the HUD be dragged by any non-button part of itself.
   function makeHudDraggable(el) {
+    const onGrab = (clientX, clientY) => {
+      const r = el.getBoundingClientRect();
+      hudDrag = { dx: clientX - r.left, dy: clientY - r.top, moved: false };
+    };
     el.addEventListener('mousedown', (e) => {
       // Buttons keep their normal behaviour.
       if (e.target && e.target.closest && e.target.closest('button')) return;
       if (e.button !== 0) return;
-      const r = el.getBoundingClientRect();
-      hudDrag = { dx: e.clientX - r.left, dy: e.clientY - r.top, moved: false };
+      onGrab(e.clientX, e.clientY);
       e.preventDefault();
     });
     document.addEventListener('mousemove', (e) => {
@@ -7171,6 +7262,27 @@
       if (hudDrag.moved) persistHudPosition();
       hudDrag = null;
     });
+    // Touch drag: same model, so the HUD can be repositioned on a phone. A touch
+    // that starts on a button is left alone (the tap acts). touchmove is
+    // non-passive here so dragging the panel doesn't also scroll the page.
+    el.addEventListener('touchstart', (e) => {
+      if (!e.target || !e.target.closest) return;
+      if (e.target.closest('button')) return;
+      // On touch, only the header is a drag handle — the rest of the panel scrolls,
+      // so a swipe over the content list isn't hijacked into moving the panel.
+      if (!e.target.closest('[data-huddrag]')) return;
+      if (!e.touches || e.touches.length !== 1) return;
+      onGrab(e.touches[0].clientX, e.touches[0].clientY);
+    }, { passive: true });
+    el.addEventListener('touchmove', (e) => {
+      if (!hudDrag || !hudEl || !e.touches || !e.touches[0]) return;
+      hudDrag.moved = true;
+      placeHud(e.touches[0].clientX - hudDrag.dx, e.touches[0].clientY - hudDrag.dy);
+      if (e.cancelable) e.preventDefault();   // we own this gesture: don't scroll too
+    }, { passive: false });
+    const endTouch = () => { if (!hudDrag) return; if (hudDrag.moved) persistHudPosition(); hudDrag = null; };
+    el.addEventListener('touchend', endTouch, { passive: true });
+    el.addEventListener('touchcancel', endTouch, { passive: true });
   }
   // Position the HUD, clamped inside the viewport.
   function placeHud(left, top) {
@@ -7228,6 +7340,7 @@
     }
 
     const head = document.createElement('div');
+    head.setAttribute('data-huddrag', '1');   // touch drag handle (see makeHudDraggable)
     head.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-bottom:1px solid #3a3a40';
     const title = document.createElement('strong');
     const st = hudState();
@@ -7360,7 +7473,44 @@
       }, '#ff9b6b'));
     }
 
-    hudEl.append(head, keys, state, diag);
+    // ── Touch action buttons ────────────────────────────────────────────────
+    // Mobile has no middle-click, shift-click, or hardware keys, so these are the
+    // on-screen path: tap to act on the profile you have OPEN (resolved via the
+    // same URL / open-profile / cursor strategy the hotkeys use). Touch only, so
+    // the desktop HUD is unchanged. Large hit targets for fingers.
+    let actions = null;
+    if (IS_TOUCH) {
+      actions = document.createElement('div');
+      actions.style.cssText = 'padding:8px 10px;border-bottom:1px solid #3a3a40';
+      const ah = document.createElement('div');
+      ah.textContent = st.target ? `ACTIONS · target ${st.target}` : 'ACTIONS · open a profile first';
+      ah.style.cssText = 'color:#8f8f9a;letter-spacing:.08em;font-size:10px;margin-bottom:6px';
+      actions.appendChild(ah);
+      const grid = document.createElement('div');
+      grid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:6px';
+      const bigBtn = (label, fn, accent) => {
+        const b = document.createElement('button');
+        b.type = 'button'; b.textContent = label;
+        b.style.cssText = 'all:unset;text-align:center;cursor:pointer;padding:11px 8px;border:1px solid #4a4a52;border-radius:8px;font:600 13px ui-monospace,monospace;color:' + (accent || '#e8e8e8');
+        b.addEventListener('click', () => { try { fn(); } catch (e) { logWarn(`${LOG} HUD action failed:`, e); } renderHud(); });
+        return b;
+      };
+      grid.appendChild(bigBtn('Block', () => hotkeyBlockTarget(), '#ff8a8a'));
+      grid.appendChild(bigBtn('Hide', () => hotkeyHideTarget(), '#e8b93b'));
+      grid.appendChild(bigBtn('Greet', () => hotkeyGreetTarget(), '#6bd6c8'));
+      grid.appendChild(bigBtn('Unlock', () => hotkeyUnlockAlbum(), '#8fb3ff'));
+      actions.appendChild(grid);
+      if (settings.longPressBlock) {
+        const hint = document.createElement('div');
+        hint.textContent = 'long-press a tile to block';
+        hint.style.cssText = 'color:#6f6f78;font-size:10px;margin-top:6px';
+        actions.appendChild(hint);
+      }
+    }
+
+    // The keyboard legend is meaningless on a touch device (no such keys), so the
+    // action buttons above replace it there.
+    hudEl.append(head, ...(IS_TOUCH ? [] : [keys]), ...(actions ? [actions] : []), state, diag);
   }
 
   // Redraw the HUD if it is open.
@@ -7447,6 +7597,12 @@
     group('BLOCKED CARD', 'hideCardOnBlock', [
       [true, 'hide immediately'], [false, 'leave it'],
     ], 'Grindr keeps serving profiles you have hidden, so hiding the card locally is what makes a block look like it worked.');
+
+    if (IS_TOUCH) {
+      group('LONG-PRESS BLOCK', 'longPressBlock', [
+        [true, 'on'], [false, 'off'],
+      ], 'Touch: press and hold a profile tile to block it (the middle-click equivalent). Off by default because a long press during a scroll can misfire.');
+    }
 
     const foot = document.createElement('div');
     foot.textContent = 'stored per browser · __grindrBlock_settings() to read or set';
