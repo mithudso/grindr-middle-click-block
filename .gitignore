@@ -2,7 +2,6 @@
 logs/
 tmp/
 .remember/
-notes/
 *.original.md
 *-0.*.txt
 node_modules/
