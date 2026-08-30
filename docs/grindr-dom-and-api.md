@@ -241,3 +241,46 @@ one can never succeed; fail fast rather than polling.
 recording in which every other key logged an event and Insert logged nothing.*
 
 Never hard-code a key you cannot verify on the target hardware. Let the user rebind.
+
+## Cascade tiles without a photo (observed 2026-08-30, live page)
+
+A profile with no public picture renders the grey silhouette as an **inline
+`data:image/svg+xml` `<img>`**, not a hosted image:
+
+```html
+<div data-testid="cascadeCellContainer" class="sc-cLEHLr eVWQRw">
+  <picture>
+    <source media="(max-width: 768px)"
+            srcset="data:image/svg+xml,%3csvg%20width='124'%20height='124'...">
+```
+
+That `src` matches none of `PROFILE_PHOTO_SELECTOR`'s host patterns
+(`cdns.grindr.com`, `grindr.com/images/profile`, `.cloudfront.net/profile`) and
+carries no filename hash, so such a tile is invisible to any photo-driven pass
+and cannot enter the photo-hash index.
+
+**Measured on the live grid**, 30 cascade cells:
+
+| | count |
+|---|---|
+| tiles with a hosted photo URL | 17 |
+| tiles with a `data:` placeholder only | **13** |
+| of those, identifiable via React fiber | 7 |
+| React-fiber id coverage, all tiles | 24 / 30 |
+
+So roughly four in ten tiles could not be reached by the image-driven
+enforcement sweep. A blocked profile with no picture stayed on the grid
+indefinitely — which is why pressing `End` on one answered "already blocked".
+
+Fixed in v0.57.0 by a second sweep pass that walks `CASCADE_CARD_SELECTOR`
+elements directly and resolves each id from the React fiber. This is safe where
+the v0.38 geometry fallback was not: a cascade cell is a grid tile by
+definition, so the walk cannot wander into the chat sidebar.
+
+### The sidebar avatars, for contrast
+
+The same page holds 148 profile images, of which **130 are inbox-sidebar
+avatars**: 40x40 `MuiAvatar` elements whose nearest multi-photo ancestor is a
+`UL` measuring 241x13627. `cardForImage` refuses all of them, which is correct —
+collapsing that `UL` would wipe the chat list (the v0.38 bug). Any future change
+to card resolution must keep refusing them.
