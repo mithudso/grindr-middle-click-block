@@ -59,7 +59,7 @@
     {
       "path": "Grindr Middle-Click Block.user.js",
       "purpose": "The entire userscript. One IIFE: observation (patched fetch/XHR/WebSocket), actuation (block queue, greet flow, album rotation, DOM sweep), and surface (hotkeys, HUD, diagnostic recorder).",
-      "bytes": 528564,
+      "bytes": 532003,
       "kind": "source"
     },
     {
@@ -185,13 +185,13 @@
     {
       "path": "docs/function-reference.md",
       "purpose": "Every named function, generated from source.",
-      "bytes": 48664,
+      "bytes": 48769,
       "kind": "doc"
     },
     {
       "path": "docs/grindr-dom-and-api.md",
       "purpose": "The interaction library: observed routes, DOM shapes, endpoints and traps, each with how it was confirmed.",
-      "bytes": 10430,
+      "bytes": 12271,
       "kind": "doc"
     },
     {
