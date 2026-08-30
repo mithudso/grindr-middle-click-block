@@ -523,6 +523,16 @@
   // the same profile object on every scroll/refresh, so this guard keeps the
   // decision (and its log line) to once per profile.
   const autoTextHandled = new Set();
+  // Cap it like every other session index (photoHashToProfileId, seenConversationIds,
+  // the diag rings): once a text-filter keyword is configured this grows one entry
+  // per distinct profile for the life of the tab, and the cascade serves hundreds
+  // per scroll. Insertion-order eviction keeps it bounded.
+  const AUTO_TEXT_HANDLED_MAX = 20_000;
+  // Record a profile as text-filter-handled, evicting the oldest entry past the cap.
+  function markAutoTextHandled(pid) {
+    autoTextHandled.add(pid);
+    if (autoTextHandled.size > AUTO_TEXT_HANDLED_MAX) autoTextHandled.delete(autoTextHandled.values().next().value);
+  }
 
   // Flatten the configured text fields of one profile object into a single
   // searchable string (fields joined by a separator that can't occur in a
@@ -580,10 +590,10 @@
   // visible card on the next sweep.
   function maybeAutoFilterByText(pid, obj) {
     if (!textFilterMatchers.length || !pid || autoTextHandled.has(pid)) return;
-    if (blockedProfileIds.has(pid)) { autoTextHandled.add(pid); return; }
+    if (blockedProfileIds.has(pid)) { markAutoTextHandled(pid); return; }
     const hit = matchTextFilter(collectProfileText(obj));
     if (!hit) return;
-    autoTextHandled.add(pid);
+    markAutoTextHandled(pid);
     if (TEXT_FILTER_ACTION === 'block') {
       logInfo(`${LOG} Auto-BLOCK ${pid} — profile text matched "${hit}".`);
       addToLocalBlockList(pid);
@@ -600,21 +610,10 @@
     scheduleEnforce();
   }
 
-  // Re-hide visible cascade cell(s) for a profile the text filter hid in 'hide'
-  // mode. DOM-only twin of enforceBlockedProfile: NO API call and NO re-block.
-  // Profiles inside their 30s manual-block Undo window are left alone.
-  function enforceTextHiddenProfile(profileId) {
-    if (recentlyBlocked.has(profileId)) return;
-    for (const card of findCardsForProfile(profileId)) {
-      if (card.style.display !== 'none') {
-        card.style.transition = 'opacity 0.2s';
-        card.style.opacity = '0';
-        card.style.display = 'none';
-      }
-    }
-  }
-
   const LOG = '[GrindrBlock]';
+  // Single source for the runtime version. Keep in step with the @version header
+  // line above (Tampermonkey reads that from the comment; this is for the code).
+  const SCRIPT_VERSION = '0.50.0';
 
   // ── Verbosity-gated logging ────────────────────────────────────────────────
   // Every log call in the script routes through these helpers and prints only
@@ -705,6 +704,27 @@
   const DIAG_MAX_NET = 400;
   const DIAG_MAX_BODY = 20_000;      // per body, to keep the file openable
   let diagNet = [];
+  // Credential-bearing endpoints. Their request/response bodies carry the refresh
+  // token and freshly-minted access/refresh JWTs, and the recorder writes a HAR the
+  // user is explicitly told to share — so these bodies must never be captured.
+  const SENSITIVE_URL_RE = /(api-tokens|\/auth\b|\/login\b|\/logout\b|\/sessions?\b|password|refresh[_-]?token|oauth|credential)/i;
+  // Defence in depth: scrub token-shaped substrings from anything that will be
+  // exported or shared, in case a token is echoed in an unexpected field of an
+  // otherwise-innocent endpoint. Capture-time gating (SENSITIVE_URL_RE) is primary.
+  function scrubSecrets(text) {
+    if (typeof text !== 'string' || !text) return text;
+    return text
+      .replace(/("(?:access|refresh|id)[_-]?[Tt]oken"\s*:\s*")[^"]+(")/g, '$1[REDACTED]$2')
+      .replace(/("(?:authorization|password|secret|api[_-]?key)"\s*:\s*")[^"]+(")/gi, '$1[REDACTED]$2')
+      .replace(/\b(Grindr3?\s+)[A-Za-z0-9._~+/=-]{12,}/g, '$1[REDACTED]')
+      .replace(/\b(Bearer\s+)[A-Za-z0-9._~+/=-]{12,}/gi, '$1[REDACTED]')
+      .replace(/\beyJ[A-Za-z0-9._-]{20,}/g, '[REDACTED-JWT]');
+  }
+  // Store a captured body: redact credential endpoints wholesale, scrub the rest.
+  function captureBody(url, body) {
+    if (SENSITIVE_URL_RE.test(String(url || ''))) return '(redacted: credential endpoint)';
+    return scrubSecrets(String(body).slice(0, DIAG_MAX_BODY));
+  }
   // Begin recording one request. Returns a record to hand to diagNetFinish, or
   // null when not recording.
   function diagNetStart(method, url) {
@@ -723,7 +743,7 @@
       rec.statusText = res ? String(res.statusText || '') : '';
       rec.mime = res && res.headers && res.headers.get ? String(res.headers.get('content-type') || '') : '';
     } catch (_e) {}
-    if (typeof resBody === 'string') rec.resBody = resBody.slice(0, DIAG_MAX_BODY);
+    if (typeof resBody === 'string') rec.resBody = captureBody(rec.url, resBody);
   }
   // Convert one internal request record to a HAR 1.2 entry.
   function harEntry(r) {
@@ -750,7 +770,7 @@
     return {
       log: {
         version: '1.2',
-        creator: { name: 'GrindrBlock userscript', version: '0.50.0' },
+        creator: { name: 'GrindrBlock userscript', version: SCRIPT_VERSION },
         pages: [], entries: diagNet.map(harEntry),
       },
     };
@@ -953,7 +973,7 @@
   function confirmBlocksFromListPayload(data) {
     if (!blockedProfileIds.size) return 0;
     let promoted = 0;
-    for (const id of idsFromListPayload(typeof data === 'string' ? data : JSON.stringify(data))) {
+    for (const id of idsFromListPayload(data)) {
       if (blockedProfileIds.has(id) && !blockConfirmedIds.has(id)) { blockConfirmedIds.add(id); promoted += 1; }
     }
     if (promoted) {
@@ -999,23 +1019,29 @@
     refreshHud();
     return autoDrain;
   }
+  let drainTickRunning = false;
   // One drain step: top the block queue up if it has run low and work remains.
-  // Paced by the queue's own limits.
+  // Paced by the queue's own limits. Re-entrancy-guarded so a tick awaiting a slow
+  // reconcile can't overlap the next.
   async function drainTick() {
+    if (drainTickRunning) return;   // a tick awaiting a slow reconcile must not overlap
     if (!autoDrain || SCRIPT_DISABLED) return;
     if (blockQueue.length > DRAIN_QUEUE_LOW_WATER) return;   // still working through the last batch
     if (blockSessionDead) { logWarn(`${LOG} auto-drain paused: session is dead.`); return; }
     if (!getCapturedAuth()) return;
-    // Refresh what Grindr actually holds, so finished work leaves the backlog.
-    try { await reconcileBlockTiers(false); } catch (_e) {}
-    const left = hidesNeedingUpgrade().length;
-    if (!left) {
-      logInfo(`${LOG} auto-drain complete — every local entry is a real block.`);
-      showToast('Auto-drain complete — all blocks are real blocks', 'ok');
-      setAutoDrain(false);
-      return;
-    }
-    upgradeHidesToBlocks(UPGRADE_BATCH);
+    drainTickRunning = true;
+    try {
+      // Refresh what Grindr actually holds, so finished work leaves the backlog.
+      try { await reconcileBlockTiers(false); } catch (_e) {}
+      const left = hidesNeedingUpgrade().length;
+      if (!left) {
+        logInfo(`${LOG} auto-drain complete — every local entry is a real block.`);
+        showToast('Auto-drain complete — all blocks are real blocks', 'ok');
+        setAutoDrain(false);
+        return;
+      }
+      upgradeHidesToBlocks(UPGRADE_BATCH);
+    } finally { drainTickRunning = false; }
   }
   // Restore the drain flag and start its timer.
   function installAutoDrain() {
@@ -1049,6 +1075,7 @@
   // fallback, so an unknown shape still yields ids rather than nothing.
   function idsFromListPayload(text) {
     const out = new Set();
+    let parsed = false;
     try {
       const seen = (v, d) => {
         if (!v || typeof v !== 'object' || d > 4) return;
@@ -1057,11 +1084,22 @@
         if (isPlausibleProfileId(pid)) out.add(pid);
         for (const k of Object.keys(v)) { const x = v[k]; if (x && typeof x === 'object') seen(x, d + 1); }
       };
-      seen(JSON.parse(text), 0);
+      // Accept a parsed value or a JSON string — callers that already have the
+      // object (the response observer) shouldn't pay a stringify→parse round-trip
+      // of a ~230KB list just to hand it here.
+      seen(typeof text === 'string' ? JSON.parse(text) : text, 0);
+      parsed = true;
     } catch (_e) {}
-    if (!out.size) {
-      const m = String(text || '').match(/\d{5,10}/g) || [];
-      for (const id of m) out.add(id);
+    // Regex fallback ONLY for a payload we could not parse (a genuinely unknown
+    // shape). A well-formed but EMPTY list must return empty — otherwise a
+    // standalone number in the envelope (a totalCount, a timestamp) is mistaken for
+    // a profileId, which both defeats reconcile's empty-page pagination break and
+    // inflates serverBlockedIds. Require whole-number boundaries and the same
+    // plausibility gate the structural walk uses.
+    if (!parsed && !out.size && typeof text === 'string') {
+      for (const mm of text.matchAll(/(?:^|[^0-9])([0-9]{5,10})(?![0-9])/g)) {
+        if (isPlausibleProfileId(mm[1])) out.add(mm[1]);
+      }
     }
     return out;
   }
@@ -1070,16 +1108,24 @@
   async function reconcileBlockTiers(force) {
     if (blockReconcileInFlight) return null;
     if (!force && Date.now() - lastBlockReconcileAt < BLOCK_RECONCILE_INTERVAL_MS) return null;
+    // A dead session can't be reconciled; don't burn the 3s sweep hammering it.
+    if (!force && blockSessionDead) return null;
     if (!blockedProfileIds.size) return null;
     const auth = getCapturedAuth();
     if (!auth) { logTrace(`${LOG} reconcileBlockTiers: no auth captured yet`); return null; }
     blockReconcileInFlight = true;
+    // Stamp the ATTEMPT, not just a success: otherwise a 401/403 or network error
+    // leaves trustworthy=false, the throttle never advances, and the 3s enforcement
+    // sweep turns into an unthrottled authed-request loop — the exact burst the
+    // queue exists to prevent.
+    lastBlockReconcileAt = Date.now();
     try {
       const headers = { 'Content-Type': 'application/json', ...auth };
-      const known = new Set();
+      const known = new Set();          // hides ∪ blocks: anything Grindr already has
+      const blocksOnly = new Set();     // real BLOCKS only, so the HUD can upgrade hides
       let trustworthy = false;
       // /hides is unpaginated (confirmed: 3309 entries in one response).
-      // /blocks takes a page param, so walk it until a page adds nothing.
+      // /blocks takes a page param, so walk it until a page returns nothing.
       const urls = [HIDE_LIST_URL];
       for (let page = 1; page <= BLOCK_LIST_MAX_PAGES; page += 1) {
         urls.push(BLOCK_LIST_URL.replace(/page=\d+/, `page=${page}`));
@@ -1089,24 +1135,32 @@
         try { res = await origFetch(url, { method: 'GET', credentials: 'include', headers }); }
         catch (err) { logTrace(`${LOG} reconcileBlockTiers fetch failed ${url}:`, err); continue; }
         if (res.status === 401 || res.status === 403) { logWarn(`${LOG} reconcileBlockTiers: auth rejected (${res.status})`); break; }
-        if (!res.ok) continue;
-        const before = known.size;
-        for (const id of idsFromListPayload(await res.text())) known.add(id);
+        if (!res.ok) { logWarn(`${LOG} reconcileBlockTiers: ${url} → ${res.status}`); continue; }
+        noteApiCalls(1);
+        const pageIds = idsFromListPayload(await res.text());
+        for (const id of pageIds) known.add(id);
+        const isBlocksPage = url.includes('page=');
+        if (isBlocksPage) for (const id of pageIds) blocksOnly.add(id);
         trustworthy = true;
-        // A blocks page that added nothing means we've walked past the end.
-        if (url.includes('page=') && known.size === before) break;
+        // A blocks PAGE that returned no ids of its own means we're past the end.
+        // (The old test — union size unchanged — broke immediately, because /hides
+        // had already put every id in `known`, so blocks pages 2+ were never read
+        // and serverBlockedIds only ever held page 1 → the drain never terminated.)
+        if (isBlocksPage && pageIds.size === 0) break;
       }
       if (!trustworthy) { logTrace(`${LOG} reconcileBlockTiers: no trustworthy list`); return null; }
-      lastBlockReconcileAt = Date.now();
-      // Remember which ids are real BLOCKS as opposed to mere hides, so the HUD
-      // can offer to upgrade the rest.
-      try {
-        const bres = await origFetch(BLOCK_LIST_URL, { method: 'GET', credentials: 'include', headers });
-        if (bres.ok) {
-          serverBlockedIds = idsFromListPayload(await bres.text());
-          logInfo(`${LOG} Grindr holds ${serverBlockedIds.size} real block(s); ${hidesNeedingUpgrade().length} of our entries are hides that could be upgraded.`);
-        }
-      } catch (_e) {}
+      // Real BLOCKS as opposed to mere hides, so the HUD can offer to upgrade the
+      // rest. The full paginated walk is authoritative — replace, don't merge. A
+      // merge would make a wrong optimistic add permanent: a drain-upgraded hide
+      // whose block POST returned 200 but did NOT stick gets optimistically added
+      // (verifyBlock also accepts its presence in /hides), and a merge could never
+      // drop it — so hidesNeedingUpgrade() would under-report and the drain would
+      // announce "complete" and disarm itself with real hides left un-upgraded.
+      // The between-reconcile optimistic add still bridges the gap until this
+      // 30-minute authoritative walk; a block that genuinely stuck is in the list
+      // by then, and one that did not is correctly dropped so the drain retries it.
+      serverBlockedIds = blocksOnly;
+      logInfo(`${LOG} Grindr holds ${serverBlockedIds.size} real block(s); ${hidesNeedingUpgrade().length} of our entries are hides that could be upgraded.`);
       let promoted = 0;
       let demoted = 0;
       for (const id of blockedProfileIds) {
@@ -1212,9 +1266,13 @@
     const id = String(profileId || '');
     if (!id || blockedProfileIds.has(id)) return false;
     blockedProfileIds.add(id);
-    saveBlockList();
-    logTrace(`${LOG} block list + ${id} (${blockedProfileIds.size} total)`);
-    return true;
+    // Honour the persist result: on a QuotaExceededError the in-memory Set and
+    // localStorage diverge, and the id vanishes on reload while the user was told
+    // "Blocked". Surface it rather than swallowing writeJson's landed-boolean.
+    const persisted = saveBlockList();
+    if (!persisted) logWarn(`${LOG} block list + ${id}: in-memory only — storage write failed (won't survive reload).`);
+    else logTrace(`${LOG} block list + ${id} (${blockedProfileIds.size} total)`);
+    return persisted;
   }
   // Drop a profile from every local block structure.
   function removeFromLocalBlockList(profileId) {
@@ -1559,7 +1617,7 @@
       unhideProfile(who, why);
       showToast(`Unhid ${who} — ${why}`, 'ok');
       scheduleEnforce();
-    } catch (_e) {}
+    } catch (e) { logWarn(`${LOG} unhideForEngagement(${profileId}) failed:`, e); }
   }
   // Treat a message object as engagement from its sender.
   function noteIncomingMessage(obj) {
@@ -1675,14 +1733,15 @@
   function notePossibleBlockAction(method, url, body) {
     try {
       const u = String(url || '');
-      if (!u.includes('grindr.com') || !BLOCK_ACTION_URL_RE.test(u)) return;
+      if (!isGrindrUrl(u) || !BLOCK_ACTION_URL_RE.test(u)) return;
       const m = String(method || 'GET').toUpperCase();
-      const bodyStr = (typeof body === 'string') ? body.slice(0, 500) : '';
+      const bodyStr = SENSITIVE_URL_RE.test(u) ? '(redacted: credential endpoint)'
+        : (typeof body === 'string') ? scrubSecrets(body.slice(0, 500)) : '';
       seenBlockActions.push({ method: m, url: u, body: bodyStr, at: Date.now() });
       if (seenBlockActions.length > 50) seenBlockActions.shift();
       // warn-level so it surfaces without trace verbosity — this is the line that
       // reveals Grindr's real block endpoint when you block via the app's own UI.
-      logTrace(`${LOG} [endpoint-sniff] ${m} ${u}${bodyStr ? ` body=${bodyStr}` : ''}`);
+      logWarn(`${LOG} [endpoint-sniff] ${m} ${u}${bodyStr ? ` body=${bodyStr}` : ''}`);
     } catch {}
   }
 
@@ -1709,15 +1768,27 @@
       return h === 'grindr.com' || h.endsWith('.grindr.com');
     } catch (_e) { return false; }
   }
+  // Only load a thumbnail from Grindr's own image hosts. photoUrl comes off an
+  // untrusted payload, and an <img src> to an arbitrary absolute URL turns every
+  // auto-block toast into an outbound beacon to a host of the payload's choosing.
+  function isTrustedPhotoUrl(u) {
+    try {
+      const url = new URL(String(u || ''), location.origin);
+      if (url.protocol !== 'https:') return false;
+      const h = url.hostname.toLowerCase();
+      return h.endsWith('.grindr.com') || h === 'grindr.com' || h.endsWith('.cloudfront.net');
+    } catch (_e) { return false; }
+  }
   // Record any mutating Grindr request while a capture window is armed.
   function noteWriteDuringCapture(method, url, body) {
     try {
       if (Date.now() > captureWritesUntil) return;
       const u = String(url || '');
-      if (!GRINDR_HOST_RE.test(u)) return;
+      if (!isGrindrUrl(u)) return;
       const m = String(method || 'GET').toUpperCase();
       if (!MUTATING_METHOD_RE.test(m)) return;
-      const bodyStr = (typeof body === 'string') ? body.slice(0, 1000)
+      const bodyStr = SENSITIVE_URL_RE.test(u) ? '(redacted: credential endpoint)'
+        : (typeof body === 'string') ? scrubSecrets(body.slice(0, 1000))
         : (body ? Object.prototype.toString.call(body) : '');
       seenBlockActions.push({ method: m, url: u, body: bodyStr, at: Date.now() });
       if (seenBlockActions.length > 80) seenBlockActions.shift();
@@ -1737,7 +1808,12 @@
       else if (ArrayBuffer.isView(data)) desc = `<${data.constructor.name} ${data.byteLength}b>`;
       else if (typeof Blob !== 'undefined' && data instanceof Blob) desc = `<Blob ${data.size}b>`;
       else desc = Object.prototype.toString.call(data);
-      seenBlockActions.push({ method: 'WS-SEND', url: '(websocket)', body: desc, at: Date.now() });
+      // Store what we LOG: outbound WS frames carry private chat text verbatim, and
+      // __grindrBlock_seenActions() hands the stored body back for sharing. Unless
+      // bodies were explicitly opted in, store the summary, not the message text.
+      const stored = captureIncludeBodies ? scrubSecrets(desc)
+        : (typeof data === 'string' ? `<string ${desc.length}ch>` : desc);
+      seenBlockActions.push({ method: 'WS-SEND', url: '(websocket)', body: stored, at: Date.now() });
       if (seenBlockActions.length > 80) seenBlockActions.shift();
       // Outbound WS frames carry chat message text verbatim (noteWsSendForGreet
        // relies on exactly that), so the body is summarised rather than printed
@@ -1895,7 +1971,7 @@
     const rec = diagNetStart((init && init.method) || 'GET', url);
     if (rec) {
       rec.mine = true;
-      try { const b = init && init.body; if (typeof b === 'string') rec.reqBody = b.slice(0, DIAG_MAX_BODY); } catch (_e) {}
+      try { const b = init && init.body; if (typeof b === 'string') rec.reqBody = captureBody(url, b); } catch (_e) {}
     }
     let res;
     try {
@@ -1916,7 +1992,7 @@
     window.fetch = async function patchedFetch(input, init) {
       try {
         const url = String((input && input.url) || input || '');
-        if (url.includes('grindr.com')) {
+        if (isGrindrUrl(url)) {
           logTrace(`${LOG} fetch ${url}`);
           // Capture request headers (this is where Authorization lives)
           if (init && init.headers) captureFromHeaders(init.headers);
@@ -1944,7 +2020,7 @@
         }
       } catch {}
       const netRec = (() => { try { const u = String((input && input.url) || input || ''); return isGrindrUrl(u) ? diagNetStart((init && init.method) || (input && input.method) || 'GET', u) : null; } catch (_e) { return null; } })();
-      if (netRec) { try { const b = (init && init.body != null) ? init.body : (input && input.body); if (typeof b === 'string') netRec.reqBody = b.slice(0, DIAG_MAX_BODY); } catch (_e) {} }
+      if (netRec) { try { const b = (init && init.body != null) ? init.body : (input && input.body); if (typeof b === 'string') netRec.reqBody = captureBody(netRec.url, b); } catch (_e) {} }
       // rawFetch, not origFetch: origFetch is the diagnostic wrapper, so calling
       // it here recorded every Grindr request TWICE (once as theirs, once as
       // ours) and doubled the HAR.
@@ -1952,7 +2028,7 @@
       if (netRec) { try { res.clone().text().then((t) => diagNetFinish(netRec, res, t)).catch(() => diagNetFinish(netRec, res, '')); } catch (_e) { diagNetFinish(netRec, res, ''); } }
       try {
         const url = String((input && input.url) || input || '');
-        if (url.includes('grindr.com')) {
+        if (isGrindrUrl(url)) {
           const ct = String((res.headers && res.headers.get && res.headers.get('content-type')) || '');
           if (ct.includes('json')) {
             // Clone — don't break Grindr's own consumption of the body
@@ -1997,7 +2073,7 @@
     XMLHttpRequest.prototype.setRequestHeader = function patchedSetHeader(name, value) {
       try {
         const url = String(this._gb_url || '');
-        if (url.includes('grindr.com')) {
+        if (isGrindrUrl(url)) {
           captureFromHeaders({ [name]: value });
         }
       } catch {}
@@ -2006,7 +2082,7 @@
     XMLHttpRequest.prototype.open = function patchedOpen(method, url) {
       try { this._gb_url = url; this._gb_method = method; } catch {}
       try { noteViewedProfileFromUrl(url); noteAlbumIdFromUrl(url); noteMyProfileIdFromUrl(url); } catch {}
-      if (String(url || '').includes('grindr.com')) logTrace(`${LOG} xhr ${method} ${url}`);
+      if (isGrindrUrl(url)) logTrace(`${LOG} xhr ${method} ${url}`);
       return origXhrOpen.apply(this, arguments);
     };
     // send() carries the request body — feed it to the capture window so a native
@@ -2828,7 +2904,11 @@
         const now = Date.now();
         const readyIdx = blockQueue.findIndex(j => !j.notBefore || j.notBefore <= now);
         if (readyIdx < 0) {
-          const soonest = Math.min(...blockQueue.map(j => j.notBefore || 0));
+          // Fold, don't spread: `Math.min(...arr)` throws RangeError once the queue
+          // is large enough (a big drain backlog with everything backing off), which
+          // would stall the queue until the next enqueue.
+          let soonest = Infinity;
+          for (const j of blockQueue) { const t = j.notBefore || 0; if (t < soonest) soonest = t; }
           await new Promise(r => setTimeout(r, Math.max(0, Math.min(soonest - now, 60_000))));
           continue;
         }
@@ -3274,7 +3354,7 @@
     // Thumbnail (auto-block only). no-referrer keeps Grindr's CDN from seeing the
     // page as referrer; an onerror just drops the broken <img> so the toast still
     // renders if the photo URL 404s or is blocked.
-    if (meta && meta.photoUrl) {
+    if (meta && meta.photoUrl && isTrustedPhotoUrl(meta.photoUrl)) {
       const img = document.createElement('img');
       img.src = meta.photoUrl;
       img.alt = '';
@@ -3339,7 +3419,7 @@
 
   // Show the 30-second Undo toast for a block, with the profile's name and photo
   // when known.
-  function offerUnblock(profileId, profileEl, prevStyle, meta) {
+  function offerUnblock(profileId, profileEl, prevStyle, meta, hiddenNodes) {
     logTrace(`${LOG} offerUnblock(${profileId})`);
     // One live offer per profile — replace any existing toast/timer.
     const existing = recentlyBlocked.get(profileId);
@@ -3367,8 +3447,9 @@
         logInfo(`${LOG} unblock requested for ${profileId}`);
         enqueueAction(profileId, 'unblock');
       }
-      // Bring the card back now; the unblock-success handler also restores via
-      // photo-hash in case this exact node was recycled.
+      // Bring the card back now: restore the exact nodes we collapsed (covers the
+      // hashCards=0 case), then the profileEl style, then any hash-indexed cards.
+      for (const n of (entry.hiddenNodes || [])) { try { n.style.display = ''; n.style.opacity = ''; } catch (_e) {} }
       undimCard(entry.profileEl, entry.prevStyle);
       restoreBlockedCardInDom(profileId);
     };
@@ -3381,7 +3462,7 @@
       recentlyBlocked.delete(profileId);
     }, UNDO_WINDOW_MS);
 
-    recentlyBlocked.set(profileId, { profileEl, prevStyle, toast, expireTimer });
+    recentlyBlocked.set(profileId, { profileEl, prevStyle, toast, expireTimer, hiddenNodes });
   }
 
   // The shared entry point for every block gesture: dim, record locally, index
@@ -3420,8 +3501,8 @@
     // It is also the only thing that makes a block visible: Grindr keeps serving
     // profiles you have blocked until its own cascade refreshes, so nothing
     // disappears unless we remove it.
-    if (settings.hideCardOnBlock) hideCardsForProfile(profileId, profileEl);
-    offerUnblock(profileId, profileEl, prevStyle);
+    const hiddenNodes = settings.hideCardOnBlock ? hideCardsForProfile(profileId, profileEl) : [];
+    offerUnblock(profileId, profileEl, prevStyle, undefined, hiddenNodes);
   }
 
   // Collapse every card we can find for a profile — the element that was clicked
@@ -3463,7 +3544,10 @@
       try { cell = clickedEl.closest ? clickedEl.closest(CASCADE_CARD_SELECTOR) : null; } catch (_e) {}
       hide(cell || clickedEl);
     }
-    return seen.size;
+    // Return the exact nodes we set display:none on (inner + outermost wrapper).
+    // Undo must restore THESE — restoreBlockedCardInDom only knows hash-indexed
+    // cards, and a block with hashCards=0 would otherwise stay invisible forever.
+    return [...seen];
   }
 
   // ── Persistent block-list enforcement ──────────────────────────────────────
@@ -3488,27 +3572,6 @@
     logInfo(`${LOG} ${profileId} reappeared while on the local block list — re-submitting block.`);
     noteBlockLanded(profileId);   // demote out of CONFIRMED and restart its clock
     enqueueAction(profileId, 'block');
-  }
-
-  // Re-hide any visible cascade cell(s) for one blocked profile. Profiles still
-  // inside their 30s Undo window are skipped — they're already dimmed/collapsing
-  // and undoable, and stomping display:none here would fight that UI. A cell
-  // found NOT already hidden means the grid genuinely re-rendered it, which is
-  // the signal to re-submit the block (throttled by maybeReblock).
-  function enforceBlockedProfile(profileId) {
-    if (recentlyBlocked.has(profileId)) return;
-    const cards = findCardsForProfile(profileId);
-    if (!cards.length) return;
-    let reappearedVisible = false;
-    for (const card of cards) {
-      if (card.style.display !== 'none') {
-        reappearedVisible = true;
-        card.style.transition = 'opacity 0.2s';
-        card.style.opacity = '0';
-        card.style.display = 'none';
-      }
-    }
-    if (reappearedVisible) maybeReblock(profileId);
   }
 
   // One sweep over rendered tiles, collapsing any that belong to a blocked or
@@ -3647,6 +3710,7 @@
       // re-submit the block within BLOCKLIST_SWEEP_MS — silently reversing this undo.
       removeFromLocalBlockList(id);
       if (!cancelQueuedBlock(id)) enqueueAction(id, 'unblock');
+      for (const n of (entry.hiddenNodes || [])) { try { n.style.display = ''; n.style.opacity = ''; } catch (_e) {} }
       undimCard(entry.profileEl, entry.prevStyle);
       restoreBlockedCardInDom(id);
     }
@@ -5175,6 +5239,14 @@
       showToast(`${id} is already blocked`, 'warn');
       return false;
     }
+    // Same wrong-target guard the block hotkey has: a stale hover/cursor id with a
+    // different profile open full-screen would otherwise hide the wrong person.
+    if (contradictedByOpenProfile(id)) {
+      const peer = openProfilePeerId();
+      logWarn(`${LOG} hide REFUSED: target ${id} but the open profile is ${peer}.`);
+      showToast(`Hide aborted — ${peer} is open, not ${id}`, 'err');
+      return false;
+    }
     if (onGrid && card) setHotkeyCursor(card, { scroll: false });
     logInfo(`${LOG} hotkey HIDE ${id} (local-only, no API call, persisted)`);
     const persisted = addToHiddenList(id);
@@ -5652,7 +5724,7 @@
           order: Array.isArray(p.order) ? p.order.map(String) : [],
           names: p.names && typeof p.names === 'object' ? p.names : {},
           retired: Array.isArray(p.retired) ? p.retired.map(String) : [],
-          myProfileId: String(p.myProfileId || ''),
+          myProfileId: isPlausibleProfileId(String(p.myProfileId || '')) ? String(p.myProfileId) : '',
           // Provenance must persist with the value. myProfileIdIsSeeded was
           // module-local, so on the SECOND page load the slot was already full,
           // the adopt block was skipped, and the flag stayed false — which made
@@ -6494,7 +6566,7 @@
     return reconcileBlockTiers(true).then((r) => {
       console.log(`${LOG} reconcile:`, r || '(skipped — no auth captured, or no blocks tracked)');
       return r;
-    });
+    }).catch((e) => { logError(`${LOG} reconcile failed:`, e); return null; });
   };
   window.__grindrBlock_blockList = function () { return [...blockedProfileIds]; };
   window.__grindrBlock_removeFromBlockList = function (profileId) {
@@ -6504,9 +6576,16 @@
   };
   window.__grindrBlock_clearBlockList = function () {
     const n = blockedProfileIds.size;
+    // Clear every derived tier too (as removeFromLocalBlockList does per id) and
+    // persist the confirmed set — otherwise BLOCK_CONFIRMED_STORAGE_KEY keeps
+    // growing and re-blocking a cleared id is skipped as still-"confirmed".
     blockedProfileIds.clear();
     lastReblockAt.clear();
+    blockLandedAt.clear();
+    blockConfirmedIds.clear();
+    serverBlockedIds = new Set();
     saveBlockList();
+    saveConfirmedBlocks();
     logInfo(`${LOG} cleared local block list (${n} entr${n === 1 ? 'y' : 'ies'}).`);
     return { cleared: n };
   };
@@ -6721,13 +6800,13 @@
       cursorProfileId: hotkeyCursorId || null,
       lastViewedProfileId: lastViewedProfileId || null,
       resolvedTarget: resolveTargetProfileId() || null,
+      // Navigation only. The acting members (greet/unlock/block/hide/unhide) used to
+      // be exposed here as ungated closures — a bypass of the console arming gate,
+      // since any page script could call __grindrBlock_hotkeys().greet() to send a
+      // message or share a private album without arming. Use the gated
+      // __grindrBlock_greet()/_unlockAlbum()/_block-equivalent APIs instead.
       next: () => navigateProfiles(1),
       prev: () => navigateProfiles(-1),
-      greet: () => hotkeyGreetTarget(),
-      unlock: () => hotkeyUnlockAlbum(),
-      block: () => hotkeyBlockTarget(),
-      hide: () => hotkeyHideTarget(),
-      unhide: (id) => unhideProfile(id, 'manual'),
       clearCursor: () => clearHotkeyCursor(),
     };
   };
@@ -6877,13 +6956,26 @@
     if (origSendBeaconRef) { try { navigator.sendBeacon = origSendBeaconRef; } catch (_e) {} }
     if (origSetTimeoutRef) { try { window.setTimeout = origSetTimeoutRef; } catch (_e) {} }
     for (const { store, clear } of origStorageClears) { try { store.clear = clear; } catch (_e) {} }
+    // Restore console too, so "is the userscript doing this?" can be answered fully.
+    for (const k of Object.keys(origConsoleMethods)) { try { console[k] = origConsoleMethods[k]; } catch (_e) {} }
+    diagConsolePatched = false;
     logWarn(`${LOG} DISABLED — all listeners are no-ops and the patched globals are restored. Reload the page to fully re-arm.`);
     showToast('Userscript disabled for this page', 'warn');
     return true;
   };
   window.__grindrBlock_enable = function () {
+    if (!SCRIPT_DISABLED) return true;
     SCRIPT_DISABLED = false;
-    logWarn(`${LOG} listeners re-armed (network patches stay off until reload).`);
+    // disable() disconnected every observer and cleared every interval, so simply
+    // flipping the flag left the script half-dead: blocked profiles stopped being
+    // hidden and the drain never ran again. Re-arm the block-enforcement observer +
+    // sweep and the drain (their handles were dead; reset the tracking arrays so a
+    // later disable() clears the fresh ones, not stale entries).
+    installedObservers.length = 0;
+    installedIntervals.length = 0;
+    try { installBlockListEnforcement(); } catch (e) { logWarn(`${LOG} enable: enforcement re-arm failed:`, e); }
+    try { installAutoDrain(); } catch (e) { logWarn(`${LOG} enable: drain re-arm failed:`, e); }
+    logWarn(`${LOG} re-armed block enforcement + drain. Reload the page to restore the network patches and the HUD refresh.`);
     return true;
   };
   window.__grindrBlock_isDisabled = function () { return SCRIPT_DISABLED; };
@@ -6926,15 +7018,29 @@
     // the enforcement sweep.
     hideCardOnBlock: true,
   };
+  // The allowed value set for each setting. Storage and the console API are both
+  // untrusted inputs — a corrupted afterBlock falls through applyAfterAction's
+  // default and silently advances; the string 'false' is truthy for hideCardOnBlock.
+  const SETTINGS_OPTIONS = {
+    afterGreet: ['advance', 'chat', 'stay', 'grid'],
+    afterBlock: ['advance', 'stay', 'grid'],
+    hideCardOnBlock: [true, false],
+  };
   let settings = { ...SETTINGS_DEFAULTS };
-  // Restore user settings.
+  // Restore user settings — copy only keys whose stored value is a known option.
   function loadSettings() {
     const o = readJson(SETTINGS_STORAGE_KEY, null, 'settings');
-    if (o && typeof o === 'object' && !Array.isArray(o)) settings = { ...SETTINGS_DEFAULTS, ...o };
+    if (!o || typeof o !== 'object' || Array.isArray(o)) return;
+    const next = { ...SETTINGS_DEFAULTS };
+    for (const k of Object.keys(SETTINGS_DEFAULTS)) {
+      if (Object.prototype.hasOwnProperty.call(o, k) && SETTINGS_OPTIONS[k].includes(o[k])) next[k] = o[k];
+    }
+    settings = next;
   }
   // Change one setting, persist it, and redraw the HUD.
   function setSetting(key, value) {
     if (!(key in SETTINGS_DEFAULTS)) return false;
+    if (!SETTINGS_OPTIONS[key].includes(value)) return false;
     settings[key] = value;
     writeJson(SETTINGS_STORAGE_KEY, settings, 'settings');
     logInfo(`${LOG} setting ${key} = ${value}`);
@@ -6985,7 +7091,7 @@
     try { target = resolveTargetProfileId() || ''; } catch (_e) {}
     const pending = (() => { try { return pendingBlockIds().length; } catch (_e) { return '?'; } })();
     return {
-      version: '0.50.0',
+      version: SCRIPT_VERSION,
       where: (() => { try { return isProfileViewOpen() ? 'profile' : (isOnChatPage() ? 'chat' : 'grid'); } catch (_e) { return '?'; } })(),
       target,
       targetState: describeTargetState(target),
@@ -7266,16 +7372,34 @@
   function beginRebind(action, row) {
     if (rebindPending) return;
     if (row.firstChild) row.firstChild.textContent = 'press a key…';
+    let to = 0;
+    // Time-box the capture and cancel it on a click elsewhere. Without this, an
+    // abandoned rebind left a document-level capture-phase keydown armed forever:
+    // the next character typed anywhere (e.g. into the chat composer) was
+    // preventDefault'd, swallowed, and silently became the new binding.
+    const cancel = (msg) => {
+      clearTimeout(to);
+      document.removeEventListener('keydown', onKey, true);
+      document.removeEventListener('mousedown', onAway, true);
+      rebindPending = null;
+      if (msg) showToast(msg, 'warn');
+      refreshHud();
+    };
+    const onAway = () => cancel('Rebind cancelled');
     const onKey = (e) => {
       e.preventDefault();
       e.stopPropagation();
+      clearTimeout(to);
       document.removeEventListener('keydown', onKey, true);
+      document.removeEventListener('mousedown', onAway, true);
       rebindPending = null;
       if (e.key === 'Escape') { showToast('Rebind cancelled', 'warn'); refreshHud(); return; }
       setKeyBinding(action, e.key);
     };
     rebindPending = onKey;
+    to = setTimeout(() => cancel('Rebind timed out'), 10_000);
     document.addEventListener('keydown', onKey, true);
+    document.addEventListener('mousedown', onAway, true);
     showToast(`Press the key you want for "${action}" (Esc to cancel)`, 'ok');
   }
 
@@ -7400,6 +7524,9 @@
   // Mirror the page's own console while recording — Grindr's errors are often the
   // real story (a 403 from its bundle explains more than anything we log).
   let diagConsolePatched = false;
+  // Originals kept so __grindrBlock_disable() can truly restore console (the kill
+  // switch is documented as putting the patched globals back).
+  const origConsoleMethods = {};
   // Mirror the page's own console.error/warn into the recording.
   function installDiagConsoleCapture() {
     if (diagConsolePatched) return;
@@ -7407,6 +7534,7 @@
     for (const level of ['error', 'warn']) {
       const orig = console[level];
       if (typeof orig !== 'function') continue;
+      origConsoleMethods[level] = orig;
       console[level] = function (...args) {
         try {
           if (diagRecording) {
@@ -7427,7 +7555,7 @@
     installDiagConsoleCapture();
     diagRecording = true;
     diagStartedAt = Date.now();
-    diagEvent('recording-started', { url: location.href, version: '0.50.0' });
+    diagEvent('recording-started', { url: location.href, version: SCRIPT_VERSION });
     logInfo(`${LOG} diagnostic recording STARTED — reproduce the problem, then press save.`);
     showToast('Recording diagnostics — reproduce the problem, then Save', 'ok');
   }
@@ -7567,6 +7695,12 @@
     let lastHudFingerprint = '';
     hudTimer = setInterval(() => {
       if (!hudOpen || !hudEl) return;
+      // The settings and greetings tabs hold live user input (a textarea that is
+      // rebuilt from saved state on every render); the rebind prompt holds a
+      // capture-phase listener. A periodic rebuild would wipe an in-progress edit
+      // or the "press a key…" prompt — pointer movement alone changes the
+      // fingerprint via the resolved target — so only auto-refresh the main tab.
+      if (hudTab !== 'main' || rebindPending) return;
       let fp = '';
       try { fp = JSON.stringify(hudState()); } catch (_e) { fp = String(Date.now()); }
       if (fp === lastHudFingerprint) return;
@@ -7593,7 +7727,7 @@
     return setAutoDrain(on);
   };
   window.__grindrBlock_settings = function (key, value) {
-    if (key === undefined) return { ...settings, options: { afterGreet: ['advance','chat','stay','grid'], afterBlock: ['advance','stay','grid'], hideCardOnBlock: [true,false] } };
+    if (key === undefined) return { ...settings, options: { ...SETTINGS_OPTIONS } };
     return setSetting(key, value) ? { ...settings } : `unknown setting: ${key}`;
   };
   window.__grindrBlock_hud = function (show) {
@@ -7603,7 +7737,7 @@
   window.__grindrBlock_record = function () { startDiagRecording(); return true; };
   window.__grindrBlock_saveReport = function () { stopDiagRecording(); return saveDiagReport(); };
 
-  logInfo(`${LOG} loaded v0.50.0 (LOCAL_ONLY=${LOCAL_ONLY}, MIN_INTERVAL_MS=${MIN_INTERVAL_MS}, MAX_PER_HOUR=${MAX_PER_HOUR}, UNDO_WINDOW_MS=${UNDO_WINDOW_MS}, VERIFY_BLOCKS=${VERIFY_BLOCKS}, blockList=${blockedProfileIds.size} (${pendingBlockIds().length} pending), hideList=${hiddenProfileIds.size}, textFilter=${TEXT_FILTER_KEYWORDS.length ? TEXT_FILTER_ACTION : 'off'}, stayLoggedIn=${STAY_LOGGED_IN}, skipBetaDialog=${SKIP_BETA_DIALOG}, hotkeys=${HOTKEYS_ENABLED ? `${keyLabel(HOTKEY_GREET_KEY())} greet, ${keyLabel(HOTKEY_ALBUM_KEY())} album, ${keyLabel(HOTKEY_BLOCK_KEY())} block, ${keyLabel(HOTKEY_HIDE_KEY())} hide, ${keyLabel(HOTKEY_PREV_KEY())}/${keyLabel(HOTKEY_NEXT_KEY())} nav` : 'off'}, albums=${albumRotation().length}, greetMode=${GREET_MODE}, me=${albumState.myProfileId || 'unknown'}${myProfileIdIsSeeded ? ' (seeded)' : ''})`);
+  logInfo(`${LOG} loaded v${SCRIPT_VERSION} (LOCAL_ONLY=${LOCAL_ONLY}, MIN_INTERVAL_MS=${MIN_INTERVAL_MS}, MAX_PER_HOUR=${MAX_PER_HOUR}, UNDO_WINDOW_MS=${UNDO_WINDOW_MS}, VERIFY_BLOCKS=${VERIFY_BLOCKS}, blockList=${blockedProfileIds.size} (${pendingBlockIds().length} pending), hideList=${hiddenProfileIds.size}, textFilter=${TEXT_FILTER_KEYWORDS.length ? TEXT_FILTER_ACTION : 'off'}, stayLoggedIn=${STAY_LOGGED_IN}, skipBetaDialog=${SKIP_BETA_DIALOG}, hotkeys=${HOTKEYS_ENABLED ? `${keyLabel(HOTKEY_GREET_KEY())} greet, ${keyLabel(HOTKEY_ALBUM_KEY())} album, ${keyLabel(HOTKEY_BLOCK_KEY())} block, ${keyLabel(HOTKEY_HIDE_KEY())} hide, ${keyLabel(HOTKEY_PREV_KEY())}/${keyLabel(HOTKEY_NEXT_KEY())} nav` : 'off'}, albums=${albumRotation().length}, greetMode=${GREET_MODE}, me=${albumState.myProfileId || 'unknown'}${myProfileIdIsSeeded ? ' (seeded)' : ''})`);
 
   // ── Test export ────────────────────────────────────────────────────────────
   // The pure helpers, exposed for the test suite. `module` does not exist in a

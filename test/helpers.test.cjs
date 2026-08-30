@@ -97,6 +97,18 @@ test('idsFromListPayload reads the real list shapes', () => {
   assert.ok(f(blocks).has('500000000'), 'the blocks shape is identical and must work too');
   assert.strictEqual(f('{"hides":[]}').size, 0);
   assert.strictEqual(f('not json at all').size, 0, 'garbage must not yield ids');
+  // A well-formed but EMPTY list must yield nothing even when the envelope carries
+  // standalone numbers: a totalCount or timestamp must NOT be read as a profileId,
+  // or it defeats reconcile's "a blocks page with no ids means past the end" break
+  // and inflates the real-block count.
+  assert.strictEqual(f('{"blocks":[],"totalCount":12345678,"ts":1700000000}').size, 0,
+    'envelope numbers in a parsed empty list must not become ids');
+  // A genuinely unparseable payload still falls back to a bounded whole-number scan.
+  assert.ok(f('garbage 700000123 tail').has('700000123'),
+    'unknown-shape fallback still extracts a plausible id');
+  // A parsed object (not a string) is accepted directly — no stringify round-trip.
+  assert.ok(f({ blocks: [{ profileId: 500000001 }] }).has('500000001'),
+    'a parsed object payload is walked structurally');
 });
 
 // ── key bindings ────────────────────────────────────────────────────────────
