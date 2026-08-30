@@ -17,7 +17,7 @@
     {
       "path": ".gitignore",
       "purpose": "Ignore rules, including local captures and the identifier mapping.",
-      "bytes": 91,
+      "bytes": 493,
       "kind": "config"
     },
     {
@@ -173,7 +173,7 @@
     {
       "path": "docs/codebase-overview.md",
       "purpose": "This file map.",
-      "bytes": 9412,
+      "bytes": 9251,
       "kind": "doc"
     },
     {
@@ -197,7 +197,7 @@
     {
       "path": "docs/high_signal_file_index.json",
       "purpose": "Machine-readable index of the same, for retrieval.",
-      "bytes": 16944,
+      "bytes": 16435,
       "kind": "config"
     },
     {
@@ -291,33 +291,15 @@
       "kind": "config"
     },
     {
-      "path": "notes/archive 2.md",
-      "purpose": "(auto) Document.",
-      "bytes": 13,
-      "kind": "doc"
-    },
-    {
       "path": "notes/archive.md",
       "purpose": "(auto) Document.",
       "bytes": 1637,
       "kind": "doc"
     },
     {
-      "path": "notes/now 2.md",
-      "purpose": "(auto) Document.",
-      "bytes": 0,
-      "kind": "doc"
-    },
-    {
       "path": "notes/now.md",
       "purpose": "(auto) Document.",
       "bytes": 0,
-      "kind": "doc"
-    },
-    {
-      "path": "notes/recent 2.md",
-      "purpose": "(auto) Document.",
-      "bytes": 183,
       "kind": "doc"
     },
     {
@@ -330,12 +312,6 @@
       "path": "notes/today-2026-06-14.done.md",
       "purpose": "(auto) Document.",
       "bytes": 132,
-      "kind": "doc"
-    },
-    {
-      "path": "notes/today-2026-06-15 2.done.md",
-      "purpose": "(auto) Document.",
-      "bytes": 728,
       "kind": "doc"
     },
     {

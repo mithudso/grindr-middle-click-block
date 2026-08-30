@@ -6,3 +6,10 @@ tmp/
 *-0.*.txt
 node_modules/
 LOCAL-IDENTIFIERS.md
+
+# Finder/iCloud duplication artifacts. This repo lives under ~/Documents, which
+# is cloud-synced, and the sync client periodically clones files as "name 2.ext"
+# — including a clone of a clone ("x 2.done 2.md"). They are byte-identical
+# copies, they multiply on their own, and once tracked they break CI on every
+# run because the generated file index can never match. Never track them.
+* [0-9].*
