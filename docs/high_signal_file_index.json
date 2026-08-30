@@ -173,7 +173,7 @@
     {
       "path": "docs/codebase-overview.md",
       "purpose": "This file map.",
-      "bytes": 8156,
+      "bytes": 9229,
       "kind": "doc"
     },
     {
@@ -197,7 +197,7 @@
     {
       "path": "docs/high_signal_file_index.json",
       "purpose": "Machine-readable index of the same, for retrieval.",
-      "bytes": 14051,
+      "bytes": 16668,
       "kind": "config"
     },
     {
@@ -407,7 +407,7 @@
     {
       "path": "scripts/gen-codebase-index.mjs",
       "purpose": "Regenerates this overview and the file index.",
-      "bytes": 9168,
+      "bytes": 10649,
       "kind": "script"
     },
     {
