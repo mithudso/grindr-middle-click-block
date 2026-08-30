@@ -77,7 +77,7 @@
     {
       "path": "package.json",
       "purpose": "Scripts only — check / test / verify. No dependencies.",
-      "bytes": 1109,
+      "bytes": 1198,
       "kind": "config"
     },
     {
@@ -191,7 +191,7 @@
     {
       "path": "docs/grindr-dom-and-api.md",
       "purpose": "The interaction library: observed routes, DOM shapes, endpoints and traps, each with how it was confirmed.",
-      "bytes": 12271,
+      "bytes": 13436,
       "kind": "doc"
     },
     {
