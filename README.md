@@ -66,11 +66,20 @@ __grindrBlock_disable()        // kill switch — never gated
 
 ## Docs
 
-- [`docs/grindr-dom-and-api.md`](docs/grindr-dom-and-api.md) — the Grindr
-  interaction library: routes, DOM shapes, endpoints, and the traps. Everything
-  in it was **observed**, and each entry says how it was confirmed.
-- [`docs/function-reference.md`](docs/function-reference.md) — every named
-  function in the script, generated from the source.
+| Doc | What |
+|---|---|
+| [grindr-dom-and-api.md](docs/grindr-dom-and-api.md) | **the interaction library** — routes, DOM shapes, endpoints, traps. Everything observed, each with how it was confirmed |
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | layers, the identity problem, block tiers, the sweep, decisions worth knowing |
+| [INSTALLATION.md](docs/INSTALLATION.md) | install, first-run setup, upgrade, real uninstall |
+| [DEVELOPMENT.md](docs/DEVELOPMENT.md) | the loop, conventions, debugging aids |
+| [TESTING.md](docs/TESTING.md) | what is covered, and what is deliberately left to live verification |
+| [SECURITY.md](docs/SECURITY.md) | threat model |
+| [external-calls.md](docs/external-calls.md) | every request, its failure handling, and the stored keys |
+| [logging.md](docs/logging.md) | levels, the partitioned recorder, what is never logged |
+| [function-reference.md](docs/function-reference.md) | all 242 functions, generated from source |
+| [codebase-overview.md](docs/codebase-overview.md) | file map |
+
+Contributors: [CONTRIBUTING.md](CONTRIBUTING.md) · [CLAUDE.md](CLAUDE.md)
 
 ## Tests
 

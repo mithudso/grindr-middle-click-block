@@ -1,0 +1,7 @@
+* text=auto eol=lf
+*.user.js text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.har binary
+*.png binary
+*.heic binary

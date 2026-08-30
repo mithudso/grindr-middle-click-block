@@ -1,0 +1,36 @@
+name: CI
+
+# The whole gate for a single-file userscript: does it parse, and does it still
+# behave? `node --check` catches a broken paste; the suite boots the entire IIFE
+# under DOM stubs, which is what actually catches "the script dies at
+# document-start" — a failure mode a syntax check cannot see.
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Syntax check
+        run: npm run check
+      - name: Test suite
+        run: npm test
+      - name: Docs are in step with the source
+        run: npm run docs:check
+
+      - name: Generated docs are current
+        # Regenerate and diff. check-docs compares counts; this catches a
+        # description edited in the source but never regenerated into the doc.
+        run: |
+          npm run docs
+          git diff --exit-code -- docs/ || {
+            echo "::error::Generated docs are stale — run 'npm run docs' and commit the result."
+            exit 1
+          }

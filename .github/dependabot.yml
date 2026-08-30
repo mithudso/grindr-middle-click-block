@@ -1,0 +1,11 @@
+# The userscript has no runtime dependencies (@grant none, nothing bundled), so
+# there is no npm ecosystem to watch. The Actions used by CI are the only moving
+# third-party parts in this repository.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "ci"

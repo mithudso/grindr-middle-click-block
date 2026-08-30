@@ -6,7 +6,20 @@
   "scripts": {
     "check": "node --check 'Grindr Middle-Click Block.user.js'",
     "test": "node --test --test-force-exit 'test/*.test.cjs'",
-    "verify": "npm run check && npm test"
+    "docs": "node scripts/gen-function-reference.mjs && node scripts/gen-codebase-index.mjs",
+    "docs:check": "node scripts/check-docs.mjs",
+    "verify": "npm run check && npm test && npm run docs:check"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mithudso/grindr-middle-click-block.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mithudso/grindr-middle-click-block/issues"
+  },
+  "homepage": "https://github.com/mithudso/grindr-middle-click-block#readme",
+  "engines": {
+    "node": ">=20"
+  }
 }

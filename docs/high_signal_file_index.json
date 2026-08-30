@@ -1,0 +1,252 @@
+{
+  "generated_by": "scripts/gen-codebase-index.mjs",
+  "repo": "grindr-middle-click-block",
+  "files": [
+    {
+      "path": ".editorconfig",
+      "purpose": "Cross-editor formatting.",
+      "bytes": 219,
+      "kind": "config"
+    },
+    {
+      "path": ".gitattributes",
+      "purpose": "Line endings and binary markers.",
+      "bytes": 117,
+      "kind": "config"
+    },
+    {
+      "path": ".gitignore",
+      "purpose": "Ignore rules, including local captures and the identifier mapping.",
+      "bytes": 98,
+      "kind": "config"
+    },
+    {
+      "path": ".nvmrc",
+      "purpose": "Pinned Node major for CI.",
+      "bytes": 3,
+      "kind": "config"
+    },
+    {
+      "path": "AGENTS.md",
+      "purpose": "No repo-local agents. Points at the script's own self-diagnosis surfaces, which are what to reach for instead.",
+      "bytes": 1018,
+      "kind": "doc"
+    },
+    {
+      "path": "CLAUDE.md",
+      "purpose": "Working rules for agents and contributors: read the interaction library first, and the five rules that came from real failures.",
+      "bytes": 2114,
+      "kind": "doc"
+    },
+    {
+      "path": "CODE_OF_CONDUCT.md",
+      "purpose": "Conduct, plus the non-negotiable rule about not posting other people's identifiers.",
+      "bytes": 600,
+      "kind": "doc"
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "purpose": "How to change a matcher without repeating this project's history: read the interaction library first, never match by substring, refuse rather than guess.",
+      "bytes": 2180,
+      "kind": "doc"
+    },
+    {
+      "path": "GEMINI.md",
+      "purpose": "The same working rules, for Gemini CLI.",
+      "bytes": 2127,
+      "kind": "doc"
+    },
+    {
+      "path": "Grindr Middle-Click Block.user.js",
+      "purpose": "The entire userscript. One IIFE: observation (patched fetch/XHR/WebSocket), actuation (block queue, greet flow, album rotation, DOM sweep), and surface (hotkeys, HUD, diagnostic recorder).",
+      "bytes": 489693,
+      "kind": "source"
+    },
+    {
+      "path": "LICENSE",
+      "purpose": "MIT.",
+      "bytes": 1065,
+      "kind": "config"
+    },
+    {
+      "path": "README.md",
+      "purpose": "Project overview, feature table, HUD, console API, and what the tests deliberately do not cover.",
+      "bytes": 6312,
+      "kind": "doc"
+    },
+    {
+      "path": "package.json",
+      "purpose": "Scripts only — check / test / verify. No dependencies.",
+      "bytes": 935,
+      "kind": "config"
+    },
+    {
+      "path": ".github/CODEOWNERS",
+      "purpose": "Reviewer mapping.",
+      "bytes": 68,
+      "kind": "config"
+    },
+    {
+      "path": ".github/PULL_REQUEST_TEMPLATE.md",
+      "purpose": "PR template. Asks for evidence, because \"it looks right\" has been wrong here.",
+      "bytes": 702,
+      "kind": "doc"
+    },
+    {
+      "path": ".github/SECURITY.md",
+      "purpose": "How to report, and what is actually worth reporting.",
+      "bytes": 1317,
+      "kind": "doc"
+    },
+    {
+      "path": ".github/copilot-instructions.md",
+      "purpose": "The same working rules, for Copilot CLI.",
+      "bytes": 2116,
+      "kind": "doc"
+    },
+    {
+      "path": ".github/dependabot.yml",
+      "purpose": "Actions only — the script has no runtime dependencies.",
+      "bytes": 353,
+      "kind": "config"
+    },
+    {
+      "path": ".github/ISSUE_TEMPLATE/bug_report.md",
+      "purpose": "Bug template — asks for a diagnostic capture, redacted.",
+      "bytes": 625,
+      "kind": "doc"
+    },
+    {
+      "path": ".github/ISSUE_TEMPLATE/feature_request.md",
+      "purpose": "Feature template — asks how it should fail safe.",
+      "bytes": 500,
+      "kind": "doc"
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "purpose": "Syntax check, test suite, docs drift check.",
+      "bytes": 1146,
+      "kind": "config"
+    },
+    {
+      "path": "docs/ARCHITECTURE.md",
+      "purpose": "Layers, the identity problem and how it is resolved, the two block tiers, the enforcement sweep, and the decisions worth knowing.",
+      "bytes": 4694,
+      "kind": "doc"
+    },
+    {
+      "path": "docs/DEVELOPMENT.md",
+      "purpose": "The edit-verify-paste-record loop, repo layout, conventions, and debugging aids.",
+      "bytes": 2406,
+      "kind": "doc"
+    },
+    {
+      "path": "docs/INSTALLATION.md",
+      "purpose": "Install, verify, first-run setup, upgrade, and a real uninstall including stored state.",
+      "bytes": 1819,
+      "kind": "doc"
+    },
+    {
+      "path": "docs/SECURITY.md",
+      "purpose": "Threat model. The interesting risks are acting on the wrong profile and the page abusing our own functions.",
+      "bytes": 2029,
+      "kind": "doc"
+    },
+    {
+      "path": "docs/TESTING.md",
+      "purpose": "What the suite covers, why coverage is not a line percentage, and what is left to live verification.",
+      "bytes": 2651,
+      "kind": "doc"
+    },
+    {
+      "path": "docs/codebase-overview.md",
+      "purpose": "This file map.",
+      "bytes": 4313,
+      "kind": "doc"
+    },
+    {
+      "path": "docs/external-calls.md",
+      "purpose": "Every request the script makes, its failure handling, the rate limiter, auth handling, and the localStorage keys.",
+      "bytes": 4083,
+      "kind": "doc"
+    },
+    {
+      "path": "docs/function-reference.md",
+      "purpose": "Every named function, generated from source.",
+      "bytes": 45916,
+      "kind": "doc"
+    },
+    {
+      "path": "docs/grindr-dom-and-api.md",
+      "purpose": "The interaction library: observed routes, DOM shapes, endpoints and traps, each with how it was confirmed.",
+      "bytes": 10430,
+      "kind": "doc"
+    },
+    {
+      "path": "docs/high_signal_file_index.json",
+      "purpose": "Machine-readable index of the same, for retrieval.",
+      "bytes": 7578,
+      "kind": "config"
+    },
+    {
+      "path": "docs/logging.md",
+      "purpose": "Levels, why every line reaches the recorder before the verbosity gate, the partitioned buffer, and what is never logged.",
+      "bytes": 2754,
+      "kind": "doc"
+    },
+    {
+      "path": "scripts/check-docs.mjs",
+      "purpose": "CI drift gate: functions documented, version consistent, reference current, links resolve, no real identifiers.",
+      "bytes": 3264,
+      "kind": "script"
+    },
+    {
+      "path": "scripts/gen-codebase-index.mjs",
+      "purpose": "Regenerates this overview and the file index.",
+      "bytes": 6666,
+      "kind": "script"
+    },
+    {
+      "path": "scripts/gen-function-reference.mjs",
+      "purpose": "Regenerates the function reference from source.",
+      "bytes": 3085,
+      "kind": "script"
+    },
+    {
+      "path": "test/helpers.test.cjs",
+      "purpose": "The pure helpers, imported for real. Each block states why the helper exists and what it must guarantee.",
+      "bytes": 11731,
+      "kind": "test"
+    },
+    {
+      "path": "test/keymap.test.cjs",
+      "purpose": "Hotkey routing, alias matching, rebinding, and pass-through when nothing can be acted on.",
+      "bytes": 2049,
+      "kind": "test"
+    },
+    {
+      "path": "test/load.test.cjs",
+      "purpose": "Boots the whole IIFE — catches \"the script dies at document-start\", which a syntax check cannot.",
+      "bytes": 2157,
+      "kind": "test"
+    },
+    {
+      "path": "test/regression.test.cjs",
+      "purpose": "Bugs that actually shipped, each named in a comment.",
+      "bytes": 4614,
+      "kind": "test"
+    },
+    {
+      "path": "test/settings.test.cjs",
+      "purpose": "Persisted settings, greetings, block-tier invariants, auto-drain, and the recorder.",
+      "bytes": 2844,
+      "kind": "test"
+    },
+    {
+      "path": "test/stubs.cjs",
+      "purpose": "Minimal browser stubs. Deliberately dumb: every DOM query returns empty, so tests exercise logic rather than a simulated page.",
+      "bytes": 3277,
+      "kind": "test"
+    }
+  ]
+}
