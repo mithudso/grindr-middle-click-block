@@ -119,26 +119,39 @@ function createAuth(config = {}) {
     // previously `signal || ac.signal` orphaned the timeout whenever a caller
     // passed their own signal.
     let sig = ac.signal;
+    let onAbort = null;
     if (signal) {
+      let merged = false;
       if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.any === 'function') {
-        try { sig = AbortSignal.any([signal, ac.signal]); } catch (_e) { sig = ac.signal; }
+        try { sig = AbortSignal.any([signal, ac.signal]); merged = true; } catch (_e) { sig = ac.signal; }
       }
-      try {
-        if (signal.aborted) ac.abort();
-        else if (typeof signal.addEventListener === 'function') signal.addEventListener('abort', () => { try { ac.abort(); } catch (_e) {} }, { once: true });
-      } catch (_e) {}
+      // On the AbortSignal.any path the merged signal already forwards the
+      // caller's abort, so no manual listener is added (it would be redundant and
+      // would leak). Only the fallback path bridges the abort manually, and that
+      // listener is always removed in `finally` so it can't accumulate on a
+      // caller-reused signal.
+      if (!merged) {
+        try {
+          if (signal.aborted) ac.abort();
+          else if (typeof signal.addEventListener === 'function') {
+            onAbort = () => { try { ac.abort(); } catch (_e) {} };
+            signal.addEventListener('abort', onAbort);
+          }
+        } catch (_e) {}
+      }
     }
 
     let res;
     try {
       res = await fetch(state.base + path, { method, credentials: 'include', headers: h, signal: sig, body: payload });
     } catch (err) {
-      clearTimeout(to);
       const aborted = (err && err.name === 'AbortError') || ac.signal.aborted;
       const code = aborted ? (signal && signal.aborted ? 'aborted' : 'timeout') : '';
       throw new GrindrError(`request failed: ${method} ${path}`, { status: 0, code, path, cause: err });
+    } finally {
+      clearTimeout(to);
+      if (onAbort) { try { signal.removeEventListener('abort', onAbort); } catch (_e) {} }
     }
-    clearTimeout(to);
 
     let text = '';
     try { text = await res.text(); }
@@ -186,13 +199,15 @@ function createBlocks(auth) {
     await auth.request(`${BLOCK_BASE}/${auth.encId(id)}`, { method: 'DELETE' });
     return true;
   };
-  /** GET the full (unpaginated) hides list. Throws on an unrecognized non-empty
-   * payload shape rather than masking it as an empty list. @returns {Promise<Array>} */
+  /** GET the full (unpaginated) hides list. Mirrors listBlocks' leniency: any
+   * shape without a `hides` array (`{}`, null, or a bare array) is read as "no
+   * hides" rather than thrown, so a benign empty response can't abort the
+   * reconcile/drain that consumes it. @returns {Promise<Array>} */
   const listHides = async () => {
     const d = await auth.request(HIDE_LIST);
     if (Array.isArray(d && d.hides)) return d.hides;
-    if (d == null) return [];
-    throw new GrindrError('unexpected /api/v1/hides payload shape', { status: 200, code: 'bad-shape', path: HIDE_LIST });
+    if (Array.isArray(d)) return d;
+    return [];
   };
   /**
    * Walk the paginated blocks list. Stops on an empty page OR a page that adds no
@@ -750,8 +765,10 @@ const HOUR_MS = 3_600_000;
  * @returns {{run:(fn:()=>Promise<any>)=>Promise<any>, pending:()=>number}}
  */
 function createLimiter({ minIntervalMs = 500, maxPerHour = 500 } = {}) {
-  // Normalize once: an invalid/zero cap must not silently disable limiting.
-  const cap = Number.isFinite(maxPerHour) && maxPerHour >= 1 ? Math.floor(maxPerHour) : Infinity;
+  // Normalize once: an invalid/zero/negative cap must not silently disable
+  // limiting, so it falls back to the default cap (not Infinity, which would
+  // remove the hourly limit entirely and permit the very bursts this guards).
+  const cap = Number.isFinite(maxPerHour) && maxPerHour >= 1 ? Math.floor(maxPerHour) : 500;
   const minMs = Number.isFinite(minIntervalMs) && minIntervalMs > 0 ? minIntervalMs : 0;
 
   let chain = Promise.resolve();
