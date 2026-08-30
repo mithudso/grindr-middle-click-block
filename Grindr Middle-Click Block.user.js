@@ -5605,7 +5605,11 @@
   // and intersection learning still runs and WINS if it ever disagrees, because
   // evidence from live traffic beats a constant compiled in months earlier.
   // Set to '' to disable seeding entirely.
-  const MY_PROFILE_ID_SEED = '500000000';
+  // Empty in the published script: a seed is YOUR OWN Grindr profile id, which
+  // does not belong in a shared file. Leave it blank and the intersection learner
+  // works it out from two different conversations, or set it once by hand with
+  // __grindrBlock_setMyProfileId(id) if you would rather not wait.
+  const MY_PROFILE_ID_SEED = '';
   // True while myProfileId came from the seed and no traffic has confirmed it.
   let myProfileIdIsSeeded = false;
 
@@ -7600,4 +7604,28 @@
   window.__grindrBlock_saveReport = function () { stopDiagRecording(); return saveDiagReport(); };
 
   logInfo(`${LOG} loaded v0.50.0 (LOCAL_ONLY=${LOCAL_ONLY}, MIN_INTERVAL_MS=${MIN_INTERVAL_MS}, MAX_PER_HOUR=${MAX_PER_HOUR}, UNDO_WINDOW_MS=${UNDO_WINDOW_MS}, VERIFY_BLOCKS=${VERIFY_BLOCKS}, blockList=${blockedProfileIds.size} (${pendingBlockIds().length} pending), hideList=${hiddenProfileIds.size}, textFilter=${TEXT_FILTER_KEYWORDS.length ? TEXT_FILTER_ACTION : 'off'}, stayLoggedIn=${STAY_LOGGED_IN}, skipBetaDialog=${SKIP_BETA_DIALOG}, hotkeys=${HOTKEYS_ENABLED ? `${keyLabel(HOTKEY_GREET_KEY())} greet, ${keyLabel(HOTKEY_ALBUM_KEY())} album, ${keyLabel(HOTKEY_BLOCK_KEY())} block, ${keyLabel(HOTKEY_HIDE_KEY())} hide, ${keyLabel(HOTKEY_PREV_KEY())}/${keyLabel(HOTKEY_NEXT_KEY())} nav` : 'off'}, albums=${albumRotation().length}, greetMode=${GREET_MODE}, me=${albumState.myProfileId || 'unknown'}${myProfileIdIsSeeded ? ' (seeded)' : ''})`);
+
+  // ── Test export ────────────────────────────────────────────────────────────
+  // The pure helpers, exposed for the test suite. `module` does not exist in a
+  // page under @grant none, so this whole block is inert in the browser and adds
+  // nothing to the page's global surface — unlike the __grindrBlock_* API, which
+  // is deliberately published.
+  //
+  // Only genuinely pure functions belong here: same input, same output, no DOM
+  // and no network. Anything that touches the page is verified against a real
+  // session instead, because a stubbed DOM would only ever confirm the
+  // assumptions that written the stub.
+  try {
+    if (typeof module === 'object' && module && module.exports) {
+      module.exports = {
+        isPlausibleProfileId, conversationIdFor, isUsableHash,
+        greetingTimeTokens, resolveGreetingTokens,
+        idsFromListPayload, keyList, keyMatches, keyLabel,
+        NOT_SEND_BUTTON_RE, SEND_BUTTON_TEXT_RE, NOT_CHAT_BUTTON_RE,
+        NOT_PAGER_RE, PAGER_NAME_RE, PAGER_ID_RE,
+        VIEWED_PROFILE_URL_RE, LIST_RESPONSE_URL_RE,
+        MIN_PROFILE_ID_LEN, MAX_PROFILE_ID_LEN,
+      };
+    }
+  } catch (_e) { /* not a CommonJS host — nothing to export to */ }
 })();

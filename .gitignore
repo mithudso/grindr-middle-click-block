@@ -6,3 +6,4 @@ notes/
 *.original.md
 *-0.*.txt
 node_modules/
+LOCAL-IDENTIFIERS.md

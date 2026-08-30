@@ -79,6 +79,14 @@ npm run verify      # syntax check + test suite
 npm test            # node --test, no dependencies
 ```
 
+**31 tests, four files, no dependencies.**
+
+`test/helpers.test.cjs` imports the **real** helpers rather than copies of them,
+and each block states why the helper exists and what it must guarantee. That is
+deliberate: a failing test should tell you what the behaviour was *supposed* to
+be, not just that something changed. Where a rule came from a real capture, the
+comment says so.
+
 The suite boots the whole IIFE under DOM stubs — which catches "the script died
 at document-start", something a syntax check cannot — then covers the public API,
 hotkey routing, persisted state, and a regression file where **every case is a bug
@@ -88,6 +96,15 @@ What the suite deliberately does **not** cover: anything needing real layout or 
 live session. Those were verified by driving the logged-in page directly, and the
 findings live in the interaction library rather than in a fake DOM that would only
 ever tell us what we already assumed.
+
+## Identifiers
+
+Profile and album ids in this repository are **placeholders**, not real accounts.
+The technical relationships are preserved — the sorted-conversation-id examples
+still sort correctly, for instance — so the documentation remains accurate without
+publishing anyone's identifiers. `MY_PROFILE_ID_SEED` ships empty; the script works
+out your own id from your traffic, or you can set it with
+`__grindrBlock_setMyProfileId(id)`.
 
 ## A note on scope
 
