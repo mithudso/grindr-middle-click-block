@@ -115,6 +115,32 @@ publishing anyone's identifiers. `MY_PROFILE_ID_SEED` ships empty; the script wo
 out your own id from your traffic, or you can set it with
 `__grindrBlock_setMyProfileId(id)`.
 
+## Library (`window.Grindr` / ESM)
+
+The reverse-engineered interaction surface is also packaged as a reusable,
+zero-dependency library under `lib/`, decoupled from the userscript's UI. It
+encodes the verified behavior — required headers, hide↔block exclusion,
+sidebar-trap-safe tile resolution, composer discrimination, sorted conversation
+ids, burst-logout rate limits — so a consumer can't trivially reintroduce the
+bugs this project already fixed.
+
+```js
+// Userscript / <script> — the global build (dist/grindr.global.js)
+const g = Grindr.createClient({ observe: true });   // auto-captures auth from traffic
+await g.blocks.hide('600000000');
+const { needsUpgrade } = await g.reconcile.reconcileTiers();
+
+// ESM — the single-file build (dist/grindr.esm.js) or lib/index.js directly
+import { createClient } from './dist/grindr.esm.js';
+const g = createClient({ token, countryCode: 'US', locale: 'en-US' });
+await g.blocks.block('600000001');
+```
+
+Modules: `auth · blocks · albums · chat · profiles · dom · compose · observe ·
+reconcile · limiter`. Build the bundles with `npm run build:lib`; the library
+has its own `node --test` suites under `test/lib/`. Design and plan live in
+`docs/superpowers/`.
+
 ## A note on scope
 
 This automates one person's own account. It is rate-limited on purpose, it never
