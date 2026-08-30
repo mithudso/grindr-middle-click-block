@@ -468,38 +468,38 @@ sits above it in the file too.
 
 | Function | Line | Description |
 |---|---|---|
-| `loadSettings()` | 7709 | Restore user settings — copy only keys whose stored value is a known option. |
-| `setSetting(key, value)` | 7719 | Change one setting, persist it, and redraw the HUD. |
-| `applyAfterAction(mode, profileId, onGrid)` | 7733 | Carry out whichever after-action the user chose. Shared by greet and block so the two behave consistently. |
-| `hudState()` | 7768 | Snapshot of everything the HUD displays. Doubles as its re-render fingerprint. |
-| `describeTargetState(id)` | 7817 | Why a key might refuse. This is the line that would have explained the last two failures immediately. |
-| `buildHud()` | 7831 | Create the HUD element, restore its position, and make it draggable. |
+| `loadSettings()` | 7718 | Restore user settings — copy only keys whose stored value is a known option. |
+| `setSetting(key, value)` | 7728 | Change one setting, persist it, and redraw the HUD. |
+| `applyAfterAction(mode, profileId, onGrid)` | 7742 | Carry out whichever after-action the user chose. Shared by greet and block so the two behave consistently. |
+| `hudState()` | 7777 | Snapshot of everything the HUD displays. Doubles as its re-render fingerprint. |
+| `describeTargetState(id)` | 7826 | Why a key might refuse. This is the line that would have explained the last two failures immediately. |
+| `buildHud()` | 7840 | Create the HUD element, restore its position, and make it draggable. |
 
 ## Draggable HUD
 
 | Function | Line | Description |
 |---|---|---|
-| `makeHudDraggable(el)` | 7865 | Let the HUD be dragged by any non-button part of itself. |
-| `placeHud(left, top)` | 7910 | Position the HUD, clamped inside the viewport. |
-| `persistHudPosition()` | 7923 | Remember where the HUD was dragged to. |
-| `restoreHudPosition()` | 7929 | Put the HUD back where it was left. |
-| `hudRow(k, v)` | 7940 | One label/value row in the HUD. |
-| `renderHud()` | 7950 | Draw the HUD for the active tab. Called only when hudState() changes. |
+| `makeHudDraggable(el)` | 7874 | Let the HUD be dragged by any non-button part of itself. |
+| `placeHud(left, top)` | 7919 | Position the HUD, clamped inside the viewport. |
+| `persistHudPosition()` | 7932 | Remember where the HUD was dragged to. |
+| `restoreHudPosition()` | 7938 | Put the HUD back where it was left. |
+| `hudRow(k, v)` | 7949 | One label/value row in the HUD. |
+| `renderHud()` | 7959 | Draw the HUD for the active tab. Called only when hudState() changes. |
 
 ## Touch action buttons
 
 | Function | Line | Description |
 |---|---|---|
-| `refreshHud()` | 8216 | Redraw the HUD if it is open. |
-| `beginRebind(action, row)` | 8221 | Capture the next keypress and bind it to an action. |
-| `renderSettingsTab()` | 8258 | The settings tab. Each row is a labelled set of choices; clicking one stores it immediately. Kept to behaviour the user actually asked to control rather than exposing every constant in the file. |
-| `renderGreetingsTab()` | 8316 | The greetings tab: a plain textarea, one phrase per line. Deliberately not a list of add/remove rows — editing prose is what a textarea is for, and this list gets rewritten wholesale far more often than it gets append… |
-| `persistHud()` | 8351 | Remember whether the HUD is open. |
-| `toggleHud()` | 8353 | Show or hide the HUD. |
-| `installDiagClickCapture()` | 8359 | Start recording clicks, with the profile id each one resolves to. |
-| `installDiagConsoleCapture()` | 8386 | Mirror the page's own console.error/warn into the recording. |
-| `startDiagRecording()` | 8407 | Begin a diagnostic recording. |
-| `stopDiagRecording()` | 8418 | End the recording. |
-| `saveDiagReport()` | 8428 | Build a plain-text report and hand it to the browser as a download. Includes the state a reader would otherwise have to ask for: build, keymap, where we were, what the lists look like, and the captured timeline. |
-| `saveDiagHar()` | 8514 | Download just the network capture, as a real HAR 1.2 file. |
-| `installHud()` | 8538 | Mount the HUD and start its refresh timer. |
+| `refreshHud()` | 8225 | Redraw the HUD if it is open. |
+| `beginRebind(action, row)` | 8230 | Capture the next keypress and bind it to an action. |
+| `renderSettingsTab()` | 8267 | The settings tab. Each row is a labelled set of choices; clicking one stores it immediately. Kept to behaviour the user actually asked to control rather than exposing every constant in the file. |
+| `renderGreetingsTab()` | 8325 | The greetings tab: a plain textarea, one phrase per line. Deliberately not a list of add/remove rows — editing prose is what a textarea is for, and this list gets rewritten wholesale far more often than it gets append… |
+| `persistHud()` | 8360 | Remember whether the HUD is open. |
+| `toggleHud()` | 8362 | Show or hide the HUD. |
+| `installDiagClickCapture()` | 8368 | Start recording clicks, with the profile id each one resolves to. |
+| `installDiagConsoleCapture()` | 8395 | Mirror the page's own console.error/warn into the recording. |
+| `startDiagRecording()` | 8416 | Begin a diagnostic recording. |
+| `stopDiagRecording()` | 8427 | End the recording. |
+| `saveDiagReport()` | 8437 | Build a plain-text report and hand it to the browser as a download. Includes the state a reader would otherwise have to ask for: build, keymap, where we were, what the lists look like, and the captured timeline. |
+| `saveDiagHar()` | 8523 | Download just the network capture, as a real HAR 1.2 file. |
+| `installHud()` | 8547 | Mount the HUD and start its refresh timer. |

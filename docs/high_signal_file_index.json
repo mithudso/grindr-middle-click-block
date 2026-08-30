@@ -59,7 +59,7 @@
     {
       "path": "Grindr Middle-Click Block.user.js",
       "purpose": "The entire userscript. One IIFE: observation (patched fetch/XHR/WebSocket), actuation (block queue, greet flow, album rotation, DOM sweep), and surface (hotkeys, HUD, diagnostic recorder).",
-      "bytes": 558181,
+      "bytes": 559021,
       "kind": "source"
     },
     {
@@ -449,7 +449,7 @@
     {
       "path": "test/settings.test.cjs",
       "purpose": "Persisted settings, greetings, block-tier invariants, auto-drain, and the recorder.",
-      "bytes": 2844,
+      "bytes": 3898,
       "kind": "test"
     },
     {

@@ -57,3 +57,23 @@ test('the diagnostic recorder captures and produces a report', () => {
   assert.match(report, /keymap:/);
   assert.match(report, /timeline/);
 });
+
+// WHY: v0.63.0 added `autoOpenChat` to SETTINGS_OPTIONS but not to
+// SETTINGS_DEFAULTS. settings.autoOpenChat was therefore undefined, the feature's
+// first line bailed, and it could never run — while still appearing in the HUD,
+// because the HUD renders from the options list. Nothing caught it.
+// MUST: every option has a default, and every default is a valid option. The two
+// lists are only meaningful together.
+test('every setting option has a default, and every default is a valid option', () => {
+  const s = globalThis.__grindrBlock_settings();
+  const opts = s.options;
+  for (const key of Object.keys(opts)) {
+    assert.ok(key in s, `${key} is offered as an option but has no default — it would read as undefined`);
+    assert.ok(opts[key].includes(s[key]),
+      `the default for ${key} (${JSON.stringify(s[key])}) is not one of its options`);
+  }
+  for (const key of Object.keys(s)) {
+    if (key === 'options') continue;
+    assert.ok(key in opts, `${key} has a default but is offered nowhere, so it cannot be changed`);
+  }
+});
