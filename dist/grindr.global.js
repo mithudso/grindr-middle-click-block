@@ -7,7 +7,9 @@
 // message — callers surface these to logs/UIs.
 
 /**
- * Best-effort extraction of a `urn:gr:err:*` code from an error body.
+ * Best-effort extraction of a `urn:gr:err:*` code from an error body. Works for
+ * an already-parsed object, an array, or a JSON string, and always falls through
+ * to a text scan so a valid-JSON body in an unexpected shape still yields a code.
  * @param {any} body parsed object or raw JSON string
  * @returns {string} the code, or '' when none is present
  */
@@ -15,10 +17,14 @@ function parseErrorCode(body) {
   try {
     const o = typeof body === 'string' ? JSON.parse(body) : body;
     const c = o && o.code;
-    return typeof c === 'string' && c.startsWith('urn:gr:err:') ? c : '';
-  } catch (_e) {
-    const m = String(body || '').match(/urn:gr:err:[a-z_]+/i);
+    if (typeof c === 'string' && c.startsWith('urn:gr:err:')) return c;
+  } catch (_e) { /* fall through to the text scan */ }
+  try {
+    const s = typeof body === 'string' ? body : JSON.stringify(body);
+    const m = String(s || '').match(/urn:gr:err:[a-z0-9_.-]+/i);
     return m ? m[0] : '';
+  } catch (_e) {
+    return '';
   }
 }
 
@@ -26,10 +32,10 @@ function parseErrorCode(body) {
 class GrindrError extends Error {
   /**
    * @param {string} message human-readable summary (no secrets)
-   * @param {{status?:number, code?:string, path?:string}} [meta]
+   * @param {{status?:number, code?:string, path?:string, cause?:any}} [meta]
    */
-  constructor(message, { status = 0, code = '', path = '' } = {}) {
-    super(message);
+  constructor(message, { status = 0, code = '', path = '', cause } = {}) {
+    super(message, cause !== undefined ? { cause } : undefined);
     this.name = 'GrindrError';
     this.status = status;
     this.code = code;
@@ -59,14 +65,19 @@ function createAuth(config = {}) {
     token: config.token || '',
     countryCode: config.countryCode || '',
     locale: config.locale || '',
-    base: config.base || 'https://web.grindr.com',
+    base: (config.base || 'https://web.grindr.com').replace(/\/+$/, ''),
   };
   const isReady = () => !!state.token;
+  /**
+   * Update credentials. For token/countryCode/locale, `''` clears and
+   * null/undefined leaves the field untouched. A blank `base` is ignored (it
+   * would otherwise turn every request into a relative URL).
+   */
   const set = (cfg = {}) => {
     if (cfg.token != null) state.token = String(cfg.token || '');
     if (cfg.countryCode != null) state.countryCode = String(cfg.countryCode || '');
     if (cfg.locale != null) state.locale = String(cfg.locale || '');
-    if (cfg.base != null) state.base = String(cfg.base);
+    if (cfg.base != null) { const b = String(cfg.base).replace(/\/+$/, ''); if (b) state.base = b; }
     return isReady();
   };
   const clear = () => { state.token = ''; };
@@ -81,35 +92,72 @@ function createAuth(config = {}) {
     };
   };
   const enc = (id) => encodeURIComponent(String(id == null ? '' : id));
+  /** enc(), but throws if the id is empty — an empty id would collapse a path
+   * onto its collection root (e.g. an authed POST to /me/hides/). */
+  const encId = (id) => {
+    const s = String(id == null ? '' : id).trim();
+    if (!s) throw new GrindrError('a resource id is required', { status: 0, code: 'bad-id' });
+    return encodeURIComponent(s);
+  };
 
   /**
    * Perform an authed request. Throws GrindrAuthError when creds are unset and
-   * GrindrError on transport failure or a non-2xx response.
+   * GrindrError on transport failure, an unreadable body, or a non-2xx response.
    * @param {string} path path beginning with `/`
    * @param {{method?:string, body?:any, signal?:AbortSignal, timeoutMs?:number}} [opts]
    * @returns {Promise<any>} parsed JSON (or raw text / null)
    */
   async function request(path, { method = 'GET', body, signal, timeoutMs = 20000 } = {}) {
     const h = headers();                       // throws GrindrAuthError if not ready
+    // Serialize the body up front so a non-serializable body is reported as such,
+    // not as a phantom transport failure.
+    let payload;
+    try { payload = body != null ? JSON.stringify(body) : undefined; }
+    catch (err) { throw new GrindrError(`request body is not serializable: ${method} ${path}`, { status: 0, code: 'bad-body', path, cause: err }); }
+
     const ac = new AbortController();
     const to = setTimeout(() => { try { ac.abort(); } catch (_e) {} }, timeoutMs);
-    const sig = signal || ac.signal;
+    // Merge the caller's signal with the internal timeout so BOTH can abort —
+    // previously `signal || ac.signal` orphaned the timeout whenever a caller
+    // passed their own signal.
+    let sig = ac.signal;
+    let onAbort = null;
+    if (signal) {
+      let merged = false;
+      if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.any === 'function') {
+        try { sig = AbortSignal.any([signal, ac.signal]); merged = true; } catch (_e) { sig = ac.signal; }
+      }
+      // On the AbortSignal.any path the merged signal already forwards the
+      // caller's abort, so no manual listener is added (it would be redundant and
+      // would leak). Only the fallback path bridges the abort manually, and that
+      // listener is always removed in `finally` so it can't accumulate on a
+      // caller-reused signal.
+      if (!merged) {
+        try {
+          if (signal.aborted) ac.abort();
+          else if (typeof signal.addEventListener === 'function') {
+            onAbort = () => { try { ac.abort(); } catch (_e) {} };
+            signal.addEventListener('abort', onAbort);
+          }
+        } catch (_e) {}
+      }
+    }
+
     let res;
     try {
-      res = await fetch(state.base + path, {
-        method,
-        credentials: 'include',
-        headers: h,
-        signal: sig,
-        body: body != null ? JSON.stringify(body) : undefined,
-      });
-    } catch (_err) {
+      res = await fetch(state.base + path, { method, credentials: 'include', headers: h, signal: sig, body: payload });
+    } catch (err) {
+      const aborted = (err && err.name === 'AbortError') || ac.signal.aborted;
+      const code = aborted ? (signal && signal.aborted ? 'aborted' : 'timeout') : '';
+      throw new GrindrError(`request failed: ${method} ${path}`, { status: 0, code, path, cause: err });
+    } finally {
       clearTimeout(to);
-      throw new GrindrError(`request failed: ${method} ${path}`, { status: 0, path });
+      if (onAbort) { try { signal.removeEventListener('abort', onAbort); } catch (_e) {} }
     }
-    clearTimeout(to);
+
     let text = '';
-    try { text = await res.text(); } catch (_e) {}
+    try { text = await res.text(); }
+    catch (err) { throw new GrindrError(`response body unreadable: ${method} ${path}`, { status: res.status, code: 'bad-response-body', path, cause: err }); }
     let data = null;
     if (text) { try { data = JSON.parse(text); } catch (_e) { data = text; } }
     if (!res.ok) {
@@ -118,7 +166,7 @@ function createAuth(config = {}) {
     return data;
   }
 
-  return { set, clear, isReady, headers, request, enc, get base() { return state.base; } };
+  return { set, clear, isReady, headers, request, enc, encId, get base() { return state.base; } };
 }
 
 
@@ -136,37 +184,58 @@ const BLOCK_LIST = '/api/v4/blocks?page=1';
  */
 function createBlocks(auth) {
   /** POST a hide. @returns {Promise<true>} */
-  const hide = async (id) => { await auth.request(`${HIDE_BASE}/${auth.enc(id)}`, { method: 'POST' }); return true; };
+  const hide = async (id) => { await auth.request(`${HIDE_BASE}/${auth.encId(id)}`, { method: 'POST' }); return true; };
   /** POST a real block. @returns {Promise<true>} */
-  const block = async (id) => { await auth.request(`${BLOCK_BASE}/${auth.enc(id)}`, { method: 'POST' }); return true; };
+  const block = async (id) => { await auth.request(`${BLOCK_BASE}/${auth.encId(id)}`, { method: 'POST' }); return true; };
   /**
    * Reverse a block. `kind:'hide'` throws — DELETE /api/v1/me/hides returns 501,
-   * there is no un-hide via that verb.
+   * there is no un-hide via that verb. Any kind other than 'block'/'hide' is
+   * rejected rather than silently treated as a block.
    * @param {string} id
    * @param {'block'|'hide'} [kind]
    * @returns {Promise<true>}
    */
   const unblock = async (id, kind = 'block') => {
-    if (kind === 'hide') {
-      throw new GrindrError('no un-hide: DELETE /api/v1/me/hides returns 501', { status: 501, code: 'no-unhide', path: HIDE_BASE });
-    }
-    await auth.request(`${BLOCK_BASE}/${auth.enc(id)}`, { method: 'DELETE' });
+    if (kind === 'hide') throw new GrindrError('no un-hide: DELETE /api/v1/me/hides returns 501', { status: 501, code: 'no-unhide', path: HIDE_BASE });
+    if (kind !== 'block') throw new GrindrError(`unblock: unknown kind ${JSON.stringify(String(kind))}`, { status: 0, code: 'bad-kind', path: BLOCK_BASE });
+    await auth.request(`${BLOCK_BASE}/${auth.encId(id)}`, { method: 'DELETE' });
     return true;
   };
-  /** GET the full (unpaginated) hides list. @returns {Promise<Array>} */
+  /** GET the full (unpaginated) hides list. Mirrors listBlocks' leniency: any
+   * shape without a `hides` array (`{}`, null, or a bare array) is read as "no
+   * hides" rather than thrown, so a benign empty response can't abort the
+   * reconcile/drain that consumes it. @returns {Promise<Array>} */
   const listHides = async () => {
     const d = await auth.request(HIDE_LIST);
-    return Array.isArray(d && d.hides) ? d.hides : [];
+    if (Array.isArray(d && d.hides)) return d.hides;
+    if (Array.isArray(d)) return d;
+    return [];
   };
-  /** Walk the paginated blocks list until a page returns no rows. @returns {Promise<Array>} */
+  /**
+   * Walk the paginated blocks list. Stops on an empty page OR a page that adds no
+   * new ids (a server that ignores ?page would otherwise duplicate page 1 up to
+   * maxPages times). The returned array carries a non-enumerable `complete` flag:
+   * false means the walk hit the page cap and the list may be truncated.
+   * @returns {Promise<Array>}
+   */
   const listBlocks = async ({ maxPages = 20 } = {}) => {
+    const cap = Number.isFinite(maxPages) && maxPages >= 1 ? Math.floor(maxPages) : 20;
     const out = [];
-    for (let page = 1; page <= maxPages; page += 1) {
+    const seen = new Set();
+    let complete = false;
+    for (let page = 1; page <= cap; page += 1) {
       const d = await auth.request(BLOCK_LIST.replace(/page=\d+/, `page=${page}`));
       const rows = Array.isArray(d && d.blocks) ? d.blocks : [];
-      if (!rows.length) break;
-      for (const r of rows) out.push(r);
+      if (!rows.length) { complete = true; break; }
+      let added = 0;
+      for (const r of rows) {
+        const key = r && r.profileId != null ? String(r.profileId) : `#${page}:${added}`;
+        if (seen.has(key)) continue;
+        seen.add(key); out.push(r); added += 1;
+      }
+      if (!added) { complete = true; break; }   // server ignored ?page — stop, don't duplicate
     }
+    Object.defineProperty(out, 'complete', { value: complete, enumerable: false });
     return out;
   };
   return { hide, block, unblock, listHides, listBlocks };
@@ -179,12 +248,14 @@ function createBlocks(auth) {
 
 function uuid4() {
   try { if (globalThis.crypto && globalThis.crypto.randomUUID) return globalThis.crypto.randomUUID(); } catch (_e) {}
-  const b = new Array(16);
-  for (let i = 0; i < 16; i += 1) b[i] = Math.floor(Math.random() * 256);
+  const b = new Uint8Array(16);
+  let filled = false;
+  try { if (globalThis.crypto && globalThis.crypto.getRandomValues) { globalThis.crypto.getRandomValues(b); filled = true; } } catch (_e) {}
+  if (!filled) for (let i = 0; i < 16; i += 1) b[i] = Math.floor(Math.random() * 256);
   b[6] = (b[6] & 0x0f) | 0x40;
   b[8] = (b[8] & 0x3f) | 0x80;
-  const h = b.map((x) => x.toString(16).padStart(2, '0'));
-  return `${h[0]}${h[1]}${h[2]}${h[3]}-${h[4]}${h[5]}-${h[6]}${h[7]}-${h[8]}${h[9]}-${h[10]}${h[11]}${h[12]}${h[13]}${h[14]}${h[15]}`;
+  const h = [...b].map((x) => x.toString(16).padStart(2, '0'));
+  return `${h.slice(0, 4).join('')}-${h.slice(4, 6).join('')}-${h.slice(6, 8).join('')}-${h.slice(8, 10).join('')}-${h.slice(10, 16).join('')}`;
 }
 
 /**
@@ -193,15 +264,15 @@ function uuid4() {
 function createAlbums(auth) {
   /** @returns {Promise<string[]>} profile ids that already hold the album */
   const getShares = async (albumId) => {
-    const d = await auth.request(`/api/v1/albums/${auth.enc(albumId)}/shares`);
+    const d = await auth.request(`/api/v1/albums/${auth.encId(albumId)}/shares`);
     return Array.isArray(d && d.profileIds) ? d.profileIds : [];
   };
   /** Share an album with a profile. */
-  const share = (albumId, profileId, shareId = uuid4()) =>
-    auth.request(`/api/v1/albums/${auth.enc(albumId)}/shares`, { method: 'POST', body: { profiles: [{ profileId: String(profileId), shareId }] } });
+  const share = async (albumId, profileId, shareId) =>
+    auth.request(`/api/v1/albums/${auth.encId(albumId)}/shares`, { method: 'POST', body: { profiles: [{ profileId: String(profileId), shareId: shareId || uuid4() }] } });
   /** Revoke a share (PUT unshares, fresh uuid). */
-  const unshare = (albumId, profileId, shareId = uuid4()) =>
-    auth.request(`/api/v1/albums/${auth.enc(albumId)}/unshares`, { method: 'PUT', body: { profiles: [{ profileId: String(profileId), shareId }] } });
+  const unshare = async (albumId, profileId, shareId) =>
+    auth.request(`/api/v1/albums/${auth.encId(albumId)}/unshares`, { method: 'PUT', body: { profiles: [{ profileId: String(profileId), shareId: shareId || uuid4() }] } });
   /** Query whether a profile has/was-shared an album (a query despite the POST). */
   const queryShare = (profileId) =>
     auth.request('/api/v2/albums/shares', { method: 'POST', body: { profileId: String(profileId) } });
@@ -216,24 +287,28 @@ function createAlbums(auth) {
 
 /**
  * Build a conversation id. Grindr ids are SORTED ascending-numeric, not
- * `<me>:<them>`.
+ * `<me>:<them>`. Non-numeric input falls back to a stable lexical order so the
+ * result is always commutative (the same pair yields the same id either way).
  * @returns {string} `"{lo}:{hi}"`
  */
 function conversationId(a, b) {
   const x = String(a), y = String(b);
-  return (Number(x) <= Number(y)) ? `${x}:${y}` : `${y}:${x}`;
+  const nx = Number(x), ny = Number(y);
+  const xFirst = (Number.isFinite(nx) && Number.isFinite(ny)) ? (nx <= ny) : (x <= y);
+  return xFirst ? `${x}:${y}` : `${y}:${x}`;
 }
 
 /**
  * Derive your own id by intersecting two different conversations you are part of
- * (a single sorted id names a pair but identifies neither party).
- * @returns {string} the shared id, or '' when the two share none
+ * (a single sorted id names a pair but identifies neither party). Returns '' when
+ * the two share zero OR more than one id — an ambiguous intersection is not a
+ * confident answer, and this value is used as your own account id.
+ * @returns {string} the single shared id, or ''
  */
 function deriveOwnId(convA, convB) {
-  const a = String(convA).split(':');
   const b = new Set(String(convB).split(':'));
-  for (const id of a) if (b.has(id)) return id;
-  return '';
+  const shared = [...new Set(String(convA).split(':'))].filter((id) => b.has(id));
+  return shared.length === 1 ? shared[0] : '';
 }
 
 /**
@@ -244,8 +319,8 @@ function createChat(auth) {
    * Fetch message history. A 403 `urn:gr:err:unauthorized_action` means the
    * profile is blocked/hidden — fail fast, don't poll.
    */
-  const getHistory = (convId, limit = 20) =>
-    auth.request(`/api/v4/chat/conversation/${auth.enc(convId)}/message?limit=${encodeURIComponent(limit)}`);
+  const getHistory = async (convId, limit = 20) =>
+    auth.request(`/api/v4/chat/conversation/${auth.encId(convId)}/message?limit=${encodeURIComponent(limit)}`);
   /** Announce typing (also the only HTTP proof the composer took input). */
   const sendTyping = (convId, status = 'Typing') =>
     auth.request('/api/v4/chatstatus/typing', { method: 'POST', body: { conversationId: String(convId), status } });
@@ -260,18 +335,19 @@ function createChat(auth) {
  */
 function createProfiles(auth) {
   /** GET a single profile. */
-  const getProfile = (id) => auth.request(`/api/v7/profiles/${auth.enc(id)}`);
+  const getProfile = async (id) => auth.request(`/api/v7/profiles/${auth.encId(id)}`);
   /** Record a profile view. */
-  const recordView = (id) => auth.request(`/api/v4/views/${auth.enc(id)}`, { method: 'POST' });
+  const recordView = async (id) => auth.request(`/api/v4/views/${auth.encId(id)}`, { method: 'POST' });
   /**
-   * Fetch a cascade page. `params` is serialized to a query string
-   * (e.g. `{ pageNumber, nearbyGeoHash, sexualPositions }`).
+   * Fetch a cascade page. `params` is serialized to a query string; null/undefined
+   * values are omitted rather than sent as the literal "null"/"undefined".
    */
   const getCascade = (params = {}) => {
     const q = Object.entries(params)
+      .filter(([, v]) => v != null)
       .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
       .join('&');
-    return auth.request(`/api/v4/cascade/?${q}`);
+    return auth.request(q ? `/api/v4/cascade/?${q}` : '/api/v4/cascade/');
   };
   return { getProfile, getCascade, recordView };
 }
@@ -286,6 +362,10 @@ const PROFILE_PHOTO_SELECTOR = 'img[src*="cdns.grindr.com"], img[src*="grindr.co
 const CASCADE_TILE_SELECTOR = '[data-testid="cascadeCellContainer"]';
 const MIN_ID = 5;
 const MAX_ID = 10;
+// One source of truth for "a profile id is 5–10 digits"; every matcher derives
+// from it so tightening the bound can't desync the regexes.
+const ID_RE_SRC = `[0-9]{${MIN_ID},${MAX_ID}}`;
+const TILE_MIN_PX = 200;   // a real tile is ~559x745; an inbox row is 241x74
 
 /** A Grindr profile id is 5–10 digits. */
 function isPlausibleProfileId(id) {
@@ -310,17 +390,27 @@ function route() {
 }
 
 /**
- * Resolve the outermost single-tile wrapper for an element. Never returns an
- * ancestor that holds more than one profile photo or that is taller than the
- * viewport (the sidebar-UL trap); returns null rather than guess.
+ * Resolve the cascade tile for an element. Prefers positive identification via the
+ * canonical `data-testid` tile; otherwise a bounded geometry walk that requires the
+ * result to look like a tile (≥200px each side, ≤viewport tall). Returns null
+ * rather than guess — an inbox avatar's row/UL is refused, never returned.
  * @param {Element} el
  * @returns {Element|null}
  */
 function resolveCascadeTile(el) {
   if (!el || typeof el.getBoundingClientRect !== 'function') return null;
-  const vh = (typeof innerHeight === 'number' ? innerHeight : 900);
-  const r0 = el.getBoundingClientRect();
+  const vh = (typeof innerHeight === 'number' && innerHeight > 0 ? innerHeight : 900);
+  let r0; try { r0 = el.getBoundingClientRect(); } catch (_e) { return null; }
   if (r0.height > vh) return null;
+  // Positive identification: the canonical tile, if the element is inside one.
+  if (typeof el.closest === 'function') {
+    let tile = null;
+    try { tile = el.closest(CASCADE_TILE_SELECTOR); } catch (_e) {}
+    if (tile) {
+      let rt; try { rt = tile.getBoundingClientRect(); } catch (_e) { return null; }
+      return rt.height > vh ? null : tile;
+    }
+  }
   const body = globalThis.document && document.body;
   const docEl = globalThis.document && document.documentElement;
   let best = el;
@@ -328,43 +418,54 @@ function resolveCascadeTile(el) {
   for (let i = 0; node && i < 4; i += 1, node = node.parentElement) {
     if (node === body || node === docEl) break;
     let photos = 0;
-    try { photos = node.querySelectorAll(PROFILE_PHOTO_SELECTOR).length; } catch (_e) {}
-    if (photos > 1) break;                       // more than one photo = not a single tile
-    const r = node.getBoundingClientRect();
+    try { photos = node.querySelectorAll(PROFILE_PHOTO_SELECTOR).length; }
+    catch (_e) { break; }                          // fail closed — a guard we can't evaluate stops the walk
+    if (photos > 1) break;                          // more than one photo = not a single tile
+    let r; try { r = node.getBoundingClientRect(); } catch (_e) { break; }
     if (r.height > vh) break;
     best = node;
   }
-  return best;
+  let rb; try { rb = best.getBoundingClientRect(); } catch (_e) { return null; }
+  return (rb.width >= TILE_MIN_PX && rb.height >= TILE_MIN_PX) ? best : null;
 }
 
 /**
- * Resolve a profile id from an element: URL peer, then a bounded attribute scan
- * (`data-profile-id` / `data-testid` / `aria-label`), then an optional photo-hash
- * index the caller supplies. Returns '' on miss.
+ * Resolve a profile id from an element: URL peer (pathname only), then a bounded
+ * attribute scan, then an optional photo-hash index. Generic attributes are matched
+ * strictly (whole value / `profile<id>`) so a display name inside
+ * `data-testid="chat-button-<name>"` can't donate a false id. Returns '' on miss.
  * @param {Element} el
  * @param {{hashIndex?: {get:(hash:string)=>string|undefined}}} [opts]
  * @returns {string}
  */
 function resolveProfileIdFromElement(el, { hashIndex } = {}) {
   try {
-    const m = (location.pathname + location.search).match(/\/(?:profiles?|users?|conversations?|chat)\/(\d{5,10})(?:\/|\?|$)/i);
+    const m = String(location.pathname || '').match(new RegExp(`/(?:profiles?|users?)/(${ID_RE_SRC})(?:/|$)`, 'i'));
     if (m && isPlausibleProfileId(m[1])) return m[1];
   } catch (_e) {}
   if (!el) return '';
+  const LOOSE = new RegExp(`(?:^|[^0-9])(${ID_RE_SRC})(?![0-9])`);
+  const STRICT = new RegExp(`^(?:profile[-_ ]?)?(${ID_RE_SRC})$`, 'i');
   try {
     let node = el;
     for (let i = 0; node && i < 6; i += 1, node = node.parentElement) {
-      const t = (node.getAttribute && (node.getAttribute('data-profile-id') || node.getAttribute('data-testid') || node.getAttribute('aria-label'))) || '';
-      const mm = String(t).match(/(?:^|[^0-9])([0-9]{5,10})(?![0-9])/);
-      if (mm && isPlausibleProfileId(mm[1])) return mm[1];
+      for (const k of ['data-profile-id', 'data-testid', 'aria-label']) {
+        const t = String((node.getAttribute && node.getAttribute(k)) || '');
+        if (!t) continue;
+        const mm = t.match(k === 'data-profile-id' ? LOOSE : STRICT);
+        if (mm && isPlausibleProfileId(mm[1])) return mm[1];
+      }
     }
   } catch (_e) {}
-  if (hashIndex && el.querySelectorAll) {
+  if (hashIndex && hashIndex.get) {
     try {
-      for (const img of el.querySelectorAll(PROFILE_PHOTO_SELECTOR)) {
+      const imgs = [];
+      try { if (el.matches && el.matches(PROFILE_PHOTO_SELECTOR)) imgs.push(el); } catch (_e) {}
+      try { if (el.querySelectorAll) imgs.push(...el.querySelectorAll(PROFILE_PHOTO_SELECTOR)); } catch (_e) {}
+      for (const img of imgs) {
         const src = String((img.getAttribute && img.getAttribute('src')) || '');
-        const h = src.split(/[?#]/)[0].match(/\/([A-Za-z0-9._-]{16,})$/);
-        if (h && hashIndex.get && hashIndex.get(h[1])) return String(hashIndex.get(h[1]));
+        const h = src.split(/[?#]/)[0].match(/\/([A-Za-z0-9_-]{16,})(?:\.[A-Za-z0-9]+)?$/);
+        if (h) { const v = hashIndex.get(h[1]); if (v != null && isPlausibleProfileId(v)) return String(v); }
       }
     } catch (_e) {}
   }
@@ -382,29 +483,13 @@ function resolveProfileIdFromElement(el, { hashIndex } = {}) {
 
 const SEND_RE = /^(send|send message|send chat|submit)$/i;
 const DRAWER_CTRL = '[aria-label="close drawer"], [aria-label="Open chat list"], [data-testid^="chat-button"]';
+const CONFIRM_ATTEMPTS = 8;
+const CONFIRM_INTERVAL_MS = 150;
 
 function elName(el) {
   try {
     return String((el.getAttribute && (el.getAttribute('aria-label') || el.getAttribute('title'))) || el.innerText || el.textContent || '').trim();
   } catch (_e) { return ''; }
-}
-
-/**
- * Find the Send button near a composer via a bounded ancestor scan. `disabled`
- * (while the box is empty) is not disqualifying — fill first, then look.
- * @param {Element} composer
- * @returns {Element|null}
- */
-function findSendButton(composer) {
-  if (!composer) return null;
-  let scope = composer;
-  for (let i = 0; i < 6 && scope; i += 1, scope = scope.parentElement) {
-    let btns = [];
-    try { btns = scope.querySelectorAll ? [...scope.querySelectorAll('button, [role="button"]')] : []; } catch (_e) {}
-    const hit = btns.find((b) => SEND_RE.test(elName(b)));
-    if (hit) return hit;
-  }
-  return null;
 }
 
 /** True when the composer belongs to the floating chat drawer, not the profile. */
@@ -416,22 +501,64 @@ function isDrawerComposer(composer) {
   return false;
 }
 
-/** Find the active composer, preferring the profile input over the chat drawer. */
+/**
+ * Find the Send button near a composer via a bounded ancestor scan, restricted to
+ * a button on the SAME side of the drawer/profile split as the composer — so a
+ * profile greeting can't click the drawer's Send. `disabled` (while the box is
+ * empty) is not disqualifying — fill first, then look.
+ * @param {Element} composer
+ * @returns {Element|null}
+ */
+function findSendButton(composer) {
+  if (!composer) return null;
+  const mine = isDrawerComposer(composer);
+  // The composer itself is an <input> whose querySelectorAll is always empty, so
+  // walk one extra level to cover the doc's "6 ancestor" scope.
+  let scope = composer;
+  for (let i = 0; i < 7 && scope; i += 1, scope = scope.parentElement) {
+    let btns = [];
+    try { btns = scope.querySelectorAll ? [...scope.querySelectorAll('button, [role="button"]')] : []; } catch (_e) {}
+    const hit = btns.find((b) => SEND_RE.test(elName(b)) && isDrawerComposer(b) === mine);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+/**
+ * Find the active composer. Ranks candidates by the `Say something...` placeholder
+ * and non-drawer-ness rather than filtering (the selector alone matches every text
+ * input, e.g. the inbox search box).
+ * @returns {Element|null}
+ */
 function findComposer() {
   let inputs = [];
   try { inputs = [...document.querySelectorAll('input[type="text"], textarea')]; } catch (_e) {}
-  const candidates = inputs.filter((c) => {
-    try { return /say something/i.test((c.getAttribute && c.getAttribute('placeholder')) || '') || c.tagName === 'TEXTAREA' || c.type === 'text'; } catch (_e) { return false; }
-  });
-  return candidates.find((c) => !isDrawerComposer(c)) || candidates[0] || null;
+  const score = (c) => {
+    let s = 0;
+    try { if (/say something/i.test((c.getAttribute && c.getAttribute('placeholder')) || '')) s += 4; } catch (_e) {}
+    try { if (!isDrawerComposer(c)) s += 2; } catch (_e) {}
+    return s;
+  };
+  const ranked = inputs.filter((c) => score(c) > 0).sort((a, b) => score(b) - score(a));
+  return ranked[0] || null;
 }
 
-/** Set the composer value and fire the `input` event the app listens for. */
+/**
+ * Set the composer value through the NATIVE value setter and fire input+change.
+ * Grindr is React: assigning `el.value` directly is tracked by React's value
+ * tracker and does NOT trip `onChange`, so the app never sees the text and Send
+ * stays disabled. The prototype setter bypasses that tracker.
+ */
 function fill(composer, text) {
   if (!composer) return;
   try {
-    composer.value = text;
+    const proto = (typeof HTMLTextAreaElement !== 'undefined' && composer instanceof HTMLTextAreaElement)
+      ? HTMLTextAreaElement.prototype
+      : (typeof HTMLInputElement !== 'undefined' ? HTMLInputElement.prototype : null);
+    const desc = proto && Object.getOwnPropertyDescriptor(proto, 'value');
+    if (desc && desc.set) desc.set.call(composer, text); else composer.value = text;
     composer.dispatchEvent(new Event('input', { bubbles: true }));
+    composer.dispatchEvent(new Event('change', { bubbles: true }));
   } catch (_e) {}
 }
 
@@ -449,7 +576,9 @@ function confirmCleared(composer) {
 }
 
 /**
- * Fill → submit → confirm-by-clear.
+ * Fill → submit → poll for the composer to clear. The send is over the WebSocket
+ * and clears a tick or more later, so a same-tick confirm reports a successful
+ * send as a failure — which drives duplicate messages on retry.
  * @param {string} text
  * @param {{composer?:Element}} [opts]
  * @returns {Promise<boolean>}
@@ -459,22 +588,27 @@ async function greet(text, { composer } = {}) {
   if (!c) return false;
   fill(c, text);
   submit(c);
+  for (let i = 0; i < CONFIRM_ATTEMPTS; i += 1) {
+    if (confirmCleared(c)) return true;
+    await new Promise((r) => setTimeout(r, CONFIRM_INTERVAL_MS));
+  }
   return confirmCleared(c);
 }
 
 
 // ---- lib/observe.js ----
-// Opt-in traffic observer: patches fetch / XHR / WebSocket.send to auto-capture
-// the Grindr3 auth headers, tap hides/blocks list responses, and observe outbound
-// WS frames. Every patch is guarded for frozen intrinsics (SES/lockdown). Uses a
-// real hostname test, never a substring (an `evil.example/?ref=grindr.com` must
-// not donate its headers).
+// Opt-in traffic observer: patches fetch and WebSocket.send to auto-capture the
+// Grindr3 auth headers, tap hides/blocks list responses, and observe outbound WS
+// frames. Both patches degrade to a no-op rather than throwing when the intrinsic
+// is frozen (SES/lockdown). Uses a real hostname test, never a substring (an
+// `evil.example/?ref=grindr.com` must not donate its headers).
 
 const LIST_RE = /\/api\/(?:v1\/hides|v\d+\/blocks)/i;
 
 function defaultIsGrindrUrl(u) {
   try {
-    const origin = (globalThis.location && location.origin) || 'https://web.grindr.com';
+    const loc = globalThis.location;
+    const origin = (loc && loc.origin) || 'https://web.grindr.com';
     const h = new URL(String(u || ''), origin).hostname.toLowerCase();
     return h === 'grindr.com' || h.endsWith('.grindr.com');
   } catch (_e) { return false; }
@@ -482,9 +616,13 @@ function defaultIsGrindrUrl(u) {
 
 function headerGet(headers, name) {
   if (!headers) return '';
+  const lower = name.toLowerCase();
   try {
     if (typeof headers.get === 'function') return headers.get(name) || '';
-    const lower = name.toLowerCase();
+    if (Array.isArray(headers)) {                       // the [[k,v],…] init form is legal
+      for (const p of headers) if (p && String(p[0]).toLowerCase() === lower) return String(p[1] == null ? '' : p[1]);
+      return '';
+    }
     for (const k of Object.keys(headers)) if (k.toLowerCase() === lower) return headers[k];
   } catch (_e) {}
   return '';
@@ -497,8 +635,10 @@ function headerGet(headers, name) {
  *          isGrindrUrl?:(u:string)=>boolean}} [handlers]
  * @returns {{install:()=>void, uninstall:()=>void}}
  */
-function createObserver({ onAuth, onListResponse, onWsSend, onError, isGrindrUrl = defaultIsGrindrUrl } = {}) {
+function createObserver({ onAuth, onListResponse, onWsSend, onError, isGrindrUrl } = {}) {
+  const urlTest = typeof isGrindrUrl === 'function' ? isGrindrUrl : defaultIsGrindrUrl;
   let rawFetch = null;
+  let patchedFetch = null;
   let origWsSend = null;
   let installed = false;
 
@@ -511,29 +651,36 @@ function createObserver({ onAuth, onListResponse, onWsSend, onError, isGrindrUrl
 
   function install() {
     if (installed) return;
-    installed = true;
+    if (typeof globalThis.fetch !== 'function') { if (onError) onError(new Error('observe: no fetch to patch')); return; }
     rawFetch = globalThis.fetch;
-    globalThis.fetch = async function patched(input, init) {
-      try {
-        const url = String((input && input.url) || input || '');
-        if (isGrindrUrl(url)) emitAuth((init && init.headers) || (input && input.headers));
-      } catch (e) { if (onError) onError(e); }
+    patchedFetch = async function patched(input, init) {
+      // If we've been uninstalled but a later observer captured us as its "raw",
+      // behave as a transparent pass-through instead of re-running our handlers.
+      if (!installed) return rawFetch.call(this, input, init);
+      const url = String((input && input.url) || input || '');
+      let isG = false;
+      try { isG = urlTest(url); if (isG) emitAuth((init && init.headers) || (input && input.headers)); }
+      catch (e) { if (onError) onError(e); }
       const res = await rawFetch.call(this, input, init);
       try {
-        const url = String((input && input.url) || input || '');
-        if (onListResponse && isGrindrUrl(url) && LIST_RE.test(url)) {
+        if (onListResponse && isG && LIST_RE.test(url)) {
           res.clone().text().then((t) => { try { onListResponse({ url, data: JSON.parse(t) }); } catch (_e) {} }).catch(() => {});
         }
       } catch (e) { if (onError) onError(e); }
       return res;
     };
+    try { globalThis.fetch = patchedFetch; }
+    catch (e) { rawFetch = null; patchedFetch = null; if (onError) onError(e); return; }   // frozen intrinsic — degrade
+    installed = true;
+    // WebSocket send tap (guarded, and only recorded once it actually patches).
     try {
       if (globalThis.WebSocket && WebSocket.prototype && onWsSend) {
-        origWsSend = WebSocket.prototype.send;
+        const prev = WebSocket.prototype.send;
         WebSocket.prototype.send = function (data) {
           try { onWsSend(data); } catch (e) { if (onError) onError(e); }
-          return origWsSend.apply(this, arguments);
+          return prev.apply(this, arguments);
         };
+        origWsSend = prev;
       }
     } catch (_e) {}
   }
@@ -541,7 +688,9 @@ function createObserver({ onAuth, onListResponse, onWsSend, onError, isGrindrUrl
   function uninstall() {
     if (!installed) return;
     installed = false;
-    try { if (rawFetch) globalThis.fetch = rawFetch; } catch (_e) {}
+    // Restore only if we're still the top patch; if a later observer wrapped us,
+    // leaving `installed = false` turns our patched fn into a pass-through.
+    try { if (patchedFetch && globalThis.fetch === patchedFetch) globalThis.fetch = rawFetch; } catch (_e) {}
     try { if (origWsSend) { WebSocket.prototype.send = origWsSend; origWsSend = null; } } catch (_e) {}
   }
 
@@ -592,8 +741,15 @@ function idsFromListPayload(text) {
 async function reconcileTiers(client, { maxPages = 20 } = {}) {
   const hides = await client.blocks.listHides();
   const blocks = await client.blocks.listBlocks({ maxPages });
-  const hideIds = new Set(hides.map((r) => String(r.profileId)).filter(isPlausibleProfileId));
-  const blockIds = new Set(blocks.map((r) => String(r.profileId)).filter(isPlausibleProfileId));
+  // Guard each row: a null/undefined entry or a non-array list must not throw and
+  // abort the whole reconcile (it drives the drain backlog).
+  const toIdSet = (rows) => new Set(
+    (Array.isArray(rows) ? rows : [])
+      .map((r) => (r && r.profileId != null ? String(r.profileId) : ''))
+      .filter(isPlausibleProfileId),
+  );
+  const hideIds = toIdSet(hides);
+  const blockIds = toIdSet(blocks);
   const needsUpgrade = new Set([...hideIds].filter((id) => !blockIds.has(id)));
   return { hideIds, blockIds, needsUpgrade };
 }
@@ -604,27 +760,35 @@ async function reconcileTiers(client, { maxPages = 20 } = {}) {
 // issue many block/hide/album calls should route them through here: it serializes
 // calls behind a minimum interval and a rolling hourly cap.
 
+const HOUR_MS = 3_600_000;
+
 /**
  * @param {{minIntervalMs?:number, maxPerHour?:number}} [opts]
  * @returns {{run:(fn:()=>Promise<any>)=>Promise<any>, pending:()=>number}}
  */
 function createLimiter({ minIntervalMs = 500, maxPerHour = 500 } = {}) {
+  // Normalize once: an invalid/zero/negative cap must not silently disable
+  // limiting, so it falls back to the default cap (not Infinity, which would
+  // remove the hourly limit entirely and permit the very bursts this guards).
+  const cap = Number.isFinite(maxPerHour) && maxPerHour >= 1 ? Math.floor(maxPerHour) : 500;
+  const minMs = Number.isFinite(minIntervalMs) && minIntervalMs > 0 ? minIntervalMs : 0;
+
   let chain = Promise.resolve();
   let lastAt = 0;
   let size = 0;
   const stamps = [];
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const sleep = (ms) => new Promise((r) => { const t = setTimeout(r, ms); if (t && typeof t.unref === 'function') t.unref(); });
 
   async function gate() {
     let now = Date.now();
-    while (stamps.length && now - stamps[0] > 3_600_000) stamps.shift();
-    if (stamps.length >= maxPerHour) {
-      const wait = 3_600_000 - (now - stamps[0]);
+    while (stamps.length && now - stamps[0] > HOUR_MS) stamps.shift();
+    if (stamps.length && stamps.length >= cap) {
+      const wait = HOUR_MS - (now - stamps[0]);
       if (wait > 0) await sleep(wait);
     }
     now = Date.now();
     const since = now - lastAt;
-    if (since < minIntervalMs) await sleep(minIntervalMs - since);
+    if (since < minMs) await sleep(minMs - since);
     lastAt = Date.now();
     stamps.push(lastAt);
   }
@@ -660,9 +824,12 @@ const VERSION = '0.1.0';
 /**
  * Build a Grindr client. Provide explicit credentials, or `observe:true` to
  * auto-capture them from live traffic.
- * @param {{token?:string, countryCode?:string, locale?:string, base?:string, observe?:boolean}} [opts]
+ * @param {{token?:string, countryCode?:string, locale?:string, base?:string,
+ *          observe?:boolean, onObserveError?:(e:any)=>void}} [opts]
+ * @returns {object} client with `.destroy()` to remove any installed observer.
+ *   `limiterFactory` is a FACTORY (call it to get a limiter), not an instance.
  */
-function createClient({ token, countryCode, locale, base, observe = false } = {}) {
+function createClient({ token, countryCode, locale, base, observe = false, onObserveError } = {}) {
   const auth = createAuth({ token, countryCode, locale, base });
   const client = {
     auth,
@@ -673,12 +840,18 @@ function createClient({ token, countryCode, locale, base, observe = false } = {}
     dom,
     compose,
     reconcile: { idsFromListPayload, reconcileTiers: (opts) => reconcileTiers(client, opts) },
-    limiter: createLimiter,
+    limiterFactory: createLimiter,
     observer: null,
+    destroy() {
+      if (client.observer) { try { client.observer.uninstall(); } catch (_e) {} client.observer = null; }
+    },
   };
   if (observe) {
-    client.observer = createObserver({ onAuth: (a) => auth.set(a) });
-    client.observer.install();
+    // Installing patches globals; never let that failure take the whole client down.
+    try {
+      client.observer = createObserver({ onAuth: (a) => auth.set(a), onError: onObserveError || (() => {}) });
+      client.observer.install();
+    } catch (_e) { client.observer = null; }
   }
   return client;
 }
