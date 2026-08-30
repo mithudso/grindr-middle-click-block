@@ -191,7 +191,7 @@
     {
       "path": "docs/grindr-dom-and-api.md",
       "purpose": "The interaction library: observed routes, DOM shapes, endpoints and traps, each with how it was confirmed.",
-      "bytes": 15944,
+      "bytes": 16232,
       "kind": "doc"
     },
     {
