@@ -59,7 +59,7 @@
     {
       "path": "Grindr Middle-Click Block.user.js",
       "purpose": "The entire userscript. One IIFE: observation (patched fetch/XHR/WebSocket), actuation (block queue, greet flow, album rotation, DOM sweep), and surface (hotkeys, HUD, diagnostic recorder).",
-      "bytes": 532003,
+      "bytes": 537203,
       "kind": "source"
     },
     {
@@ -173,7 +173,7 @@
     {
       "path": "docs/codebase-overview.md",
       "purpose": "This file map.",
-      "bytes": 10072,
+      "bytes": 10354,
       "kind": "doc"
     },
     {
@@ -185,7 +185,7 @@
     {
       "path": "docs/function-reference.md",
       "purpose": "Every named function, generated from source.",
-      "bytes": 48769,
+      "bytes": 49068,
       "kind": "doc"
     },
     {
@@ -197,7 +197,7 @@
     {
       "path": "docs/high_signal_file_index.json",
       "purpose": "Machine-readable index of the same, for retrieval.",
-      "bytes": 17528,
+      "bytes": 17899,
       "kind": "config"
     },
     {
@@ -401,7 +401,7 @@
     {
       "path": "test/drain-e2e.test.cjs",
       "purpose": "Does the drain actually drain? An end-to-end check against a fake Grindr. WHY THIS FILE EXISTS: three separate fixes to the hide→block drain were each declared done on the strength of a code reading — cap starvation (v0.52/0.53), the pag…",
-      "bytes": 12927,
+      "bytes": 12928,
       "kind": "test"
     },
     {
@@ -438,6 +438,12 @@
       "path": "test/server-blocks.test.cjs",
       "purpose": "The drain backlog's subtrahend, and why it has to survive a reload. WHY THIS FILE EXISTS: the reconcile button's number \"kept going up\". The backlog is `blockedProfileIds \\ serverBlockedIds`. blockedProfileIds is persisted; serverBlocked…",
       "bytes": 3876,
+      "kind": "test"
+    },
+    {
+      "path": "test/session-dead-recovery.test.cjs",
+      "purpose": "A transient 401 must not freeze the queue forever. WHY THIS FILE IS SEPARATE: it needs a fresh process. The shared end-to-end file forces reconciles, and a reconcile stamps its 30-minute throttle whether or not it succeeds — so by the ti…",
+      "bytes": 3961,
       "kind": "test"
     },
     {
