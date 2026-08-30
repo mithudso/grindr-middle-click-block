@@ -12,6 +12,10 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 process.chdir(root);
 
 // -z so filenames containing spaces survive.
+//
+// This walks TRACKED files only, which means a newly created file is invisible
+// here until it is staged. Run this AFTER `git add`, or CI fails on "generated
+// docs are stale" listing a file you did in fact create. That has happened twice.
 const tracked = execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8' })
   .split('\0').filter(Boolean);
 
