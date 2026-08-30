@@ -1,6 +1,6 @@
 {
   "name": "grindr-middle-click-block",
-  "version": "0.62.0",
+  "version": "0.63.0",
   "private": true,
   "description": "Userscript for web.grindr.com: block/hide, canned greetings, album unlock, keyboard navigation, and an on-screen HUD with diagnostics.",
   "scripts": {

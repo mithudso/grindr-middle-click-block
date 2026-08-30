@@ -59,7 +59,7 @@
     {
       "path": "Grindr Middle-Click Block.user.js",
       "purpose": "The entire userscript. One IIFE: observation (patched fetch/XHR/WebSocket), actuation (block queue, greet flow, album rotation, DOM sweep), and surface (hotkeys, HUD, diagnostic recorder).",
-      "bytes": 554369,
+      "bytes": 558181,
       "kind": "source"
     },
     {
@@ -185,7 +185,7 @@
     {
       "path": "docs/function-reference.md",
       "purpose": "Every named function, generated from source.",
-      "bytes": 49973,
+      "bytes": 50416,
       "kind": "doc"
     },
     {
@@ -461,7 +461,7 @@
     {
       "path": "test/unconvertible-blocks.test.cjs",
       "purpose": "A backlog that cannot be finished must still reach zero. WHY THIS FILE IS SEPARATE: the local block list is read from storage once, at load. Seeding it after the script has booted does nothing, so this needs a fresh process — the same re…",
-      "bytes": 7369,
+      "bytes": 7211,
       "kind": "test"
     },
     {

@@ -33,8 +33,13 @@ const res = (status, body) => ({
   json: async () => JSON.parse(body || '{}'), text: async () => body || '',
 });
 
+const writes = [];   // every write the script makes, recorded by the ORIGINAL stub.
+                     // A wrapper installed after load cannot see them: the script
+                     // captures origFetch at load time, deliberately, so its own
+                     // calls bypass the observers it installs on window.fetch.
 globalThis.fetch = async (url, opts = {}) => {
   const u = String(url), m = (opts.method || 'GET').toUpperCase();
+  if (m === 'POST' && /\/me\/(?:blocks|hides)\/\d+$/.test(u)) writes.push(u);
   const p = u.match(/\/api\/v4\/blocks\?page=(\d+)/);
   if (p) return res(200, listBody([...serverBlocks].slice((+p[1] - 1) * 100, +p[1] * 100)));
   if (u.includes('/api/v1/hides')) return res(200, listBody(serverHides));
@@ -96,50 +101,34 @@ test('profiles that never accept a block are retired, and the backlog reaches ze
   }
 });
 
-// MUST: once a profile is known not to accept a block, a gesture on it must not
-// spend another doomed write — it must hide the card, which is the part you can
-// actually see. This is what "middle-click blocking isn't working" was: a capture
-// shows three POST /api/v3/me/blocks/{id} all returning 200 against a profile
-// that was already BLOCKED and HIDDEN, so nothing changed and the card stayed.
-test('a gesture on an un-convertible profile hides it instead of re-POSTing', async () => {
+// MUST: "un-convertible" means un-convertible TO A BLOCK. It says nothing about
+// whether the profile can be HIDDEN, which is a different relationship and the one
+// that actually removes someone from the feed. So a gesture must still write, and
+// only the DRAIN — which writes /api/v3/me/blocks — may skip.
+//
+// This is the correction to v0.61.0. That version skipped the write for any
+// already-blocked or retired profile, which was right while every gesture wrote
+// /blocks. v0.62.0 moved gestures to the hide, and leaving the skip in place would
+// have silently stopped hiding the 1656 profiles already in the blocks list.
+test('a gesture on an un-convertible profile still writes; only the drain skips', async () => {
   const stuck = G.__grindrBlock_stuckBlocks();
   assert.ok(stuck.count > 0, 'precondition: the previous test retired some');
   const victim = stuck.ids[0];
 
-  const seen = [];
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = async (url, opts = {}) => {
-    const u = String(url);
-    if (/\/api\/v[13]\/me\/(?:blocks|hides)\/\d+$/.test(u) && (opts.method || 'GET') === 'POST') seen.push(u);
-    return realFetch(url, opts);
-  };
-
-  G.__grindrBlock_block(victim);
+  writes.length = 0;
+  G.__grindrBlock_block(victim);            // a gesture
   await sleep(2500);
-  globalThis.fetch = realFetch;
+  const gestureWrites = writes.filter((u) => u.endsWith('/' + victim));
+  assert.strictEqual(gestureWrites.length, 1,
+    `a gesture on ${victim} must still write — being un-convertible to a BLOCK says ` +
+    'nothing about whether it can be hidden, and the hide is what removes someone');
+  assert.match(gestureWrites[0], /\/me\/hides\//,
+    "and the write must be the hide, which is what Grindr's own menu fires");
 
-  assert.strictEqual(seen.length, 0,
-    `pressing block on ${victim} must not send another write — it has already proven ` +
-    'it answers 200 and never lists, so the write is doomed and the card stays put');
-  assert.ok(G.__grindrBlock_hiddenList().some((h) => String(h.profileId) === victim),
-    'it must be hidden locally instead, which is the part that is actually visible');
-  assert.ok(G.__grindrBlock_blockList().includes(victim), 'and it stays on the local block list');
-});
-
-// MUST: the same restraint for a profile Grindr already has blocked. Re-POSTing
-// spends a write to change nothing.
-test('a gesture on an already-blocked profile does not re-POST either', async () => {
-  const already = GOOD[0];
-  assert.ok(serverBlocks.has(already), 'precondition: Grindr already holds this block');
-  const seen = [];
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = async (url, opts = {}) => {
-    const u = String(url);
-    if (/\/api\/v[13]\/me\/(?:blocks|hides)\/\d+$/.test(u) && (opts.method || 'GET') === 'POST') seen.push(u);
-    return realFetch(url, opts);
-  };
-  G.__grindrBlock_block(already);
+  // The drain, which writes /api/v3/me/blocks, must still skip it.
+  writes.length = 0;
+  G.__grindrBlock_upgradeHides(10);
   await sleep(2500);
-  globalThis.fetch = realFetch;
-  assert.strictEqual(seen.length, 0, 'the block is already applied; re-POSTing changes nothing');
+  assert.ok(!writes.some((u) => u.includes('/me/blocks/') && u.endsWith('/' + victim)),
+    `the drain must NOT re-POST a block for ${victim} — that write has proven doomed`);
 });
