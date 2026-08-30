@@ -5,10 +5,12 @@
   "description": "Userscript for web.grindr.com: block/hide, canned greetings, album unlock, keyboard navigation, and an on-screen HUD with diagnostics.",
   "scripts": {
     "check": "node --check 'Grindr Middle-Click Block.user.js'",
-    "test": "node --test --test-force-exit 'test/*.test.cjs'",
+    "test": "node --test --test-force-exit 'test/*.test.cjs' 'test/lib/*.test.cjs'",
     "docs": "node scripts/gen-function-reference.mjs && node scripts/gen-codebase-index.mjs",
     "docs:check": "node scripts/check-docs.mjs",
-    "verify": "npm run check && npm test && npm run docs:check"
+    "build:lib": "node scripts/build-lib.mjs",
+    "build:check": "node scripts/build-lib.mjs && git diff --exit-code -- dist/",
+    "verify": "npm run check && npm test && npm run docs:check && npm run build:check"
   },
   "license": "MIT",
   "repository": {
