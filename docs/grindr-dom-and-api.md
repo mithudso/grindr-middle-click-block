@@ -137,6 +137,49 @@ Chat-button search kept coming back empty.
 conversation rows**, not the profile's chat control. Any `[data-testid*="chat"]`
 match will hit all of them.
 
+### Which profile is the overlay showing? Ask the overlay's fiber (observed 2026-08-31)
+
+`?profile=true` carries no id, and every indirect source named someone else while a
+profile sat open — caught in a live DevTools session and in three recordings of v0.63.0:
+
+| Source | What it actually named |
+|---|---|
+| `findOpenProfileView()` geometry walk | `#cascade`. The first *visible* CDN photo in DOM order is a grid tile scrolled behind the modal (`top:-828px` still passes an is-visible check); the `?profile=true` branch lifted the ≤6-photo cap, so the walk stopped at `#cascade` (3361px wide, 29 photos), and the id resolver then read the **first grid tile's** photo hash. Home / End / middle-click acted on the top-left tile — correct only when that was the tile you had opened. |
+| the observed open conversation (`GET /api/v4/chat/conversation/<a>:<b>/message`) | whoever the inbox last refreshed — it moved to a stranger with 2 unread while the overlay stayed on the same person. |
+| `lastViewedProfileId` (last `GET /api/v7/profiles/{id}`) | the **next** profile: the pager prefetches its neighbours (opening a profile fired three `/profiles/{id}` GETs at once). |
+| `history.state.usr.profile.viewingProfileId` | the profile the overlay was *opened* on; the pager does not update it. |
+
+What does name it: the overlay is `div.MuiModal-root[role="presentation"]` appended
+to `<body>`, the only element holding `[aria-label="Next Profile"]` /
+`[aria-label="Previous Profile"]` (plus `button[aria-label="Close"]`, the
+`Say something...` input and the profile's photos, largest ≈1361px). Inside it a
+React-fiber walk from the largest photo, the heading and the composer input reaches
+`userProfile.profileId` at depth 5–13 and `profile.profileId` at 18–25 — all
+agreeing, and changing on every pager step (600000001 → 600000002 → 600000003
+across two PageDowns) while the rest of the page did not. `openProfileViewId()`
+requires the anchors to agree and returns `''` otherwise.
+
+Two traps inside the overlay, both hit during the v0.65.0 proof run: the pager
+controls (`[aria-label="Previous Profile"]` / `Next Profile`) hold **40px thumbnails
+of the neighbouring profiles** whose fiber names *them*; and after a hide removes the
+card the overlay was showing, the pane goes **blank** — no heading, no composer, only
+those thumbnails. A lone anchor then "agrees" with itself and names the previous or
+next profile. Hence: nothing inside the pager controls, photos ≥200px only, and at
+least two anchors must answer. A gesture on the open profile now also advances the
+pager (same after-action as `Home`) so the blank state is not left on screen.
+
+Verified after the fix: `Home` on a paged-to profile posted
+`POST /api/v1/me/hides/{the fiber id}`; before it, the same key posted nothing
+("Block confirmed" 100 ms later = the top-left tile was already in the blocks list).
+
+### The left rail (where the minimized HUD docks)
+
+The column at the left edge is `position:fixed`, 64px × viewport height,
+`display:flex; flex-direction:column`, holding four 64px items (logo, inbox,
+favourites, avatar) and a 222px legal block at the bottom with the Terms of Service
+and Privacy Policy links. Its classes are styled-components hashes; it is found from
+`a[href*="grindr.com/terms"]` walked up to the first fixed ancestor.
+
 ---
 
 ## 4. API
