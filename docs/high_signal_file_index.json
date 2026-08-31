@@ -59,7 +59,7 @@
     {
       "path": "Grindr Middle-Click Block.user.js",
       "purpose": "The entire userscript. One IIFE: observation (patched fetch/XHR/WebSocket), actuation (block queue, greet flow, album rotation, DOM sweep), and surface (hotkeys, HUD, diagnostic recorder).",
-      "bytes": 559021,
+      "bytes": 572543,
       "kind": "source"
     },
     {
@@ -173,7 +173,7 @@
     {
       "path": "docs/codebase-overview.md",
       "purpose": "This file map.",
-      "bytes": 10635,
+      "bytes": 10911,
       "kind": "doc"
     },
     {
@@ -185,19 +185,19 @@
     {
       "path": "docs/function-reference.md",
       "purpose": "Every named function, generated from source.",
-      "bytes": 50416,
+      "bytes": 52164,
       "kind": "doc"
     },
     {
       "path": "docs/grindr-dom-and-api.md",
       "purpose": "The interaction library: observed routes, DOM shapes, endpoints and traps, each with how it was confirmed.",
-      "bytes": 16232,
+      "bytes": 19570,
       "kind": "doc"
     },
     {
       "path": "docs/high_signal_file_index.json",
       "purpose": "Machine-readable index of the same, for retrieval.",
-      "bytes": 18269,
+      "bytes": 18636,
       "kind": "config"
     },
     {
@@ -420,6 +420,12 @@
       "path": "test/load.test.cjs",
       "purpose": "Boots the whole IIFE — catches \"the script dies at document-start\", which a syntax check cannot.",
       "bytes": 2157,
+      "kind": "test"
+    },
+    {
+      "path": "test/open-profile-id.test.cjs",
+      "purpose": "v0.65.0 — while a profile was open, the action keys and the click resolver targeted the top-left GRID TILE, not the profile on screen (see docs/grindr-dom-and-api.md, \"Which profile is the overlay showing?\"). The DOM half of the fix is v…",
+      "bytes": 4430,
       "kind": "test"
     },
     {
